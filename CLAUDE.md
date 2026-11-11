@@ -23,11 +23,11 @@ Se trabaja en Windows: Godot 4.7.2 en `~/Downloads/Godot_v4.7.2-stable_win64.exe
 - Rápido: `python awstudio.py generate highland_lake --size 1024 --seed 3 --save X.awp --godot-project <proyecto> --subfolder generated_worlds/nombre`.
 - UI: `python awstudio.py ui` (Archivo → Generar paisaje de ejemplo Ctrl+G; Exportar a Godot Ctrl+E). REST: `awstudio.py api`.
 - Tests: `pytest -q` (≈3 min; incluye importaciones, navegación y Terrain3D en Godot real si `find_godot` lo encuentra / `$AWS_GODOT`, y el addon
-  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 107 en verde (≈2,8 min; incluye el editor PySide6 sin pantalla y el puente editor↔agente). Venv: `.venv/Scripts/python.exe`.
+  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 117 en verde (≈2,8 min; incluye el editor PySide6 sin pantalla y el puente editor↔agente). Venv: `.venv/Scripts/python.exe`.
 
 ## Mapa del código
 `core/world/session.py` (WorldSession: operaciones, undo, checkpoints) y `service.py` (las 56 herramientas, única fuente para UI/CLI/REST/MCP; el editor comparte la misma `SESSION`) ·
-`core/world/presets.py` (`highland_lake`) · `core/history/operations.py` (registro de operaciones, replay) · `terrain/` (heightfield, pinceles, procedural,
+`core/world/presets.py` (`highland_lake`) + `presets_extra.py` (`mesa_valley`, `river_valley`, `canyon`) · `core/history/operations.py` (registro de operaciones, replay) · `terrain/` (heightfield, pinceles, procedural,
 erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos, `paths/` con `routing.py`: rutas, `route_river`, transitabilidad) ·
 `geometry/cliffs` (muralla de mesetas) · `biomes/` (máscaras, dispersión) · `materials/` · `validation/` · `render/preview.py` (vistas headless para agentes) ·
 `exporters/godot/` (`exporter.py`, `glb.py`, `terrain_lod.py`, `navigation.py`, `procedural_assets.py`, `assets_bake.py`, `library/*.res`, `shaders/`) ·
@@ -85,7 +85,7 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
 1. ~~Exportar a Terrain3D~~ (hecho y probado en `wicktale` con su material toon; falta que el usuario lo recorra con su jugador).
 2. ~~Agua del juego~~ (hecho: `water_script`). Siguiente: usar `flora.gd` y `grass_field.gd` del juego (vegetación con colisión, pasto y flores);
    senderos con su propia id de textura (hoy `dirt` = id 1). Flores y más hierba.
-3. Formaciones de roca (arcos, pilares, salientes); acantilados como geometría real en las terrazas. 4. Más presets (cañón, costa, pradera abierta).
+3. Formaciones de roca (arcos, pilares, salientes); acantilados como geometría real en las terrazas. 4. ~~Más presets~~ (hechos: valle de mesetas, valle fluvial, cañón). Faltan costa, alta montaña/glaciar, islas.
 5. Editar features creados (`modify_*`), dependencias y aviso de "desactualizado"; reordenar/desactivar operaciones. 6. UI: ~~diálogo de exportación~~, ~~colocar objetos~~, ~~editar curvas (ríos, senderos, lagos)~~ (hechos). Faltan: editar otras operaciones
    desde la UI ~~(hecho: panel Historial con parámetros y activar/desactivar)~~, ~~overlays~~ (altura, pendiente, agua, transitable). Faltan:
    ~~panel de actividad del agente~~ (hecho: puente editor↔MCP). Faltan: pinceles nuevos, biblioteca de assets, modo «asistido» (el agente

@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
         self._act(m, "Guardar", self.on_save, "Ctrl+S")
         self._act(m, "Guardar como…", self.on_save_as, "Ctrl+Shift+S")
         m.addSeparator()
-        self._act(m, "Generar paisaje de ejemplo…", self.on_generate, "Ctrl+G", "Crea un paisaje completo (cuenco con terrazas, lago, bosques, senderos, montañas)")
+        self._act(m, "Generar paisaje…", self.on_generate, "Ctrl+G", "Crea un paisaje completo: cuenco con lago, valle de mesetas, valle fluvial o cañón")
         self._act(m, "Exportar a Godot 4…", self.on_export, "Ctrl+E", "Genera un proyecto de Godot con el mundo (chunks, colisiones, agua, vegetación)")
         e = self.menuBar().addMenu("&Editar")
         self.a_undo = self._act(e, "Deshacer", self.view.undo, "Ctrl+Z", "Deshacer el último paso")
@@ -193,6 +193,7 @@ class MainWindow(QMainWindow):
         self._act(tb, "📄 Nuevo", self.on_new, tip="Crear un mundo nuevo (Ctrl+N)")
         self._act(tb, "📂 Abrir", self.on_open, tip="Abrir un proyecto (Ctrl+O)")
         self._act(tb, "💾 Guardar", self.on_save, tip="Guardar el proyecto (Ctrl+S)")
+        self._act(tb, "🏞 Generar paisaje", self.on_generate, tip="Crear un mapa completo: cuenco con lago, valle de mesetas, valle fluvial o cañón (Ctrl+G)")
         self._act(tb, "🎮 Exportar a Godot", self.on_export, tip="Exportar el mundo a un proyecto de Godot 4 (Ctrl+E)")
         tb.addSeparator()
         tb.addAction(self.a_undo); tb.addAction(self.a_redo)
@@ -527,23 +528,42 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Guardado en {self.session.path}", 4000)
 
     def on_generate(self):
-        size, ok = QInputDialog.getDouble(self, "Generar paisaje", "Tamaño del mundo (metros por lado, 768–3000):", 1536, 768, 3000)
-        if not ok:
-            return
-        seed, ok = QInputDialog.getInt(self, "Generar paisaje", "Semilla (cambia el resultado):", self.seed.value(), 0, 9999)
-        if not ok:
-            return
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
         from core.world import presets
+        kinds = [("highland_lake", "Cuenco con lago (terrazas en anillos, lago con isla, cascadas, montaña escalable)", 1536),
+                 ("mesa_valley", "Valle de mesetas (al estilo de Genshin: mesetas escalonadas, montañas, charcas, árbol grande, cascada)", 1024),
+                 ("river_valley", "Valle fluvial (llanura con colinas, río grande que serpentea, lago, bosques)", 1536),
+                 ("canyon", "Cañón (altiplano con cañón escalonado, río al fondo, mesetas sueltas, sendero de bajada)", 1536)]
+        dlg = QDialog(self); dlg.setWindowTitle("Generar paisaje"); f = QFormLayout(dlg)
+        c = QComboBox()
+        for k, label, _ in kinds:
+            c.addItem(label.split(" (")[0], k)
+        desc = QLabel(); desc.setWordWrap(True); desc.setStyleSheet("color:#4b5563;"); desc.setMinimumWidth(420)
+        size = QSpinBox(); size.setRange(768, 3000); size.setSingleStep(256); size.setSuffix(" m")
+        seed = QSpinBox(); seed.setRange(0, 9999); seed.setValue(self.seed.value())
+
+        def changed(i):
+            k, label, default = kinds[i]
+            t = label[label.index("(") + 1:-1]; desc.setText(t[:1].upper() + t[1:] + "."); size.setValue(default)
+        c.currentIndexChanged.connect(changed); changed(0)
+        f.addRow("Tipo de mapa", c); f.addRow(desc); f.addRow("Tamaño (lado)", size)
+        f.addRow("Semilla (cambia el resultado)", seed)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); bb.button(QDialogButtonBox.Ok).setText("Generar")
+        bb.accepted.connect(dlg.accept); bb.rejected.connect(dlg.reject); f.addRow(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            r = presets.generate_landscape("highland_lake", size, seed)
+            r = presets.generate_landscape(c.currentData(), float(size.value()), seed.value())
         finally:
             QApplication.restoreOverrideCursor()
-        if not r["ok"]:
-            QMessageBox.warning(self, "No se pudo generar", str(r.get("error", r))); return
         self.view.reload(); self._sync_scales(); self.select_tool("navigate")
-        tr = r["traversability"]
-        self.statusBar().showMessage(f"Paisaje generado. Zona transitable: {tr['reachable_fraction']:.0%}; cima alcanzable: {'sí' if tr['summit_reachable'] else 'no'}.", 10000)
+        if not r.get("ok"):
+            bad = [s for s in r.get("steps", []) if not s.get("ok")]
+            QMessageBox.warning(self, "Paisaje con problemas", str(r.get("error") or bad)[:800]); return
+        tr = r.get("traversability", {})
+        self.statusBar().showMessage(f"{c.currentText()} generado (semilla {seed.value()}). Zona transitable a pie: {tr.get('reachable_fraction', 0):.0%}. "
+                                     "Prueba otra semilla para variarlo.", 10000)
 
     def on_export(self):
         from app.export_dialog import ExportDialog, run_export

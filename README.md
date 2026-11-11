@@ -7,7 +7,7 @@ Se puede usar de cuatro formas, todas sobre el mismo núcleo (`core/world/sessio
 | Forma | Comando |
 |---|---|
 | Editor de escritorio (PySide6) | `python awstudio.py ui` |
-| Línea de comandos | `python awstudio.py generate highland_lake --size 1536 --seed 1 --godot-project <proyecto Godot>` |
+| Línea de comandos | `python awstudio.py generate mesa_valley --size 1024 --seed 1 --godot-project <proyecto Godot>  (o highland_lake, river_valley, canyon)` |
 | Agente IA (MCP, 56 herramientas) | `.mcp.json` ya incluido → `python -m mcp_server.server`. Con el editor abierto, el agente trabaja sobre el mundo del editor (panel «Agente») |
 | API REST | `python awstudio.py api` → http://127.0.0.1:8000/docs |
 

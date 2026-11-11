@@ -54,3 +54,26 @@ def test_highland_lake_succeeds_for_several_seeds(seed):
     assert r["ok"], [s for s in r["steps"] if not s.get("ok")]
     river = next(s for s in r["steps"] if s["step"] == "river")
     assert river["waterfalls"] >= 1 and r["traversability"]["summit_reachable"]
+
+
+@pytest.mark.parametrize("preset,size", [("mesa_valley", 1024), ("river_valley", 1536), ("canyon", 1536)])
+@pytest.mark.parametrize("seed", [1, 2, 5])
+def test_new_presets_build_a_playable_world(preset, size, seed):
+    from biomes.masks.masks import water_mask
+    from core.world import presets
+    from core.world import service as S
+    r = presets.generate_landscape(preset, size, seed)
+    assert r["ok"], [s for s in r["steps"] if not s.get("ok")]
+    hf = S.SESSION.hf
+    st = r["player_start"]
+    assert not water_mask(hf, S.SESSION.op_log)[int(st[1] / hf.cell_size), int(st[0] / hf.cell_size)]     # the player starts on land
+    assert r["traversability"]["reachable_fraction"] > 0.3
+    kinds = {o.kind for o in S.SESSION.op_log}
+    assert "scatter_vegetation" in kinds and ({"river", "lake"} & kinds)
+    assert float(hf.data.max() - hf.data.min()) > size * 0.05                                         # real relief, not a flat map
+
+
+def test_presets_are_listed_for_agents():
+    from core.world import service as S
+    caps = S.get_capabilities()["landscape_presets"]
+    assert set(caps) >= {"highland_lake", "mesa_valley", "river_valley", "canyon"}

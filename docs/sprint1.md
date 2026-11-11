@@ -206,3 +206,14 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   firma y tipos resueltos de la función original). Un cerrojo serializa las llamadas. Panel «Agente» (`app/agent_panel.py`): hora, herramienta,
   argumentos, resultado, ms y avisos; la vista se refresca sola (sin mover la cámara salvo cambio de tamaño). Probado con un cliente MCP real.
 - `highland_lake` robusto: 3/16 semillas fallaban (río apuntando a la isla del centro del lago; sendero de terrazas sin ruta al primer intento).
+
+
+## Más tipos de mapa (fase 12)
+- `core/world/presets_extra.py`: `mesa_valley` (valle de mesetas estilo Genshin: mesetas escalonadas con paredes verticales, montañas detrás,
+  acantilado largo con cascada a una charca, árbol grande, sendero a una meseta), `river_valley` (colinas suaves, río grande serpenteante tallado en
+  una llanura de inundación, lago lateral, cordilleras que enmarcan), `canyon` (altiplano + cañón sinuoso y cañón lateral tallados y luego
+  `terrace_terrain` en todo el mapa = paredes escalonadas; suelo seco pintado ligero para que las paredes conserven la roca; sendero de bajada).
+- La semilla mueve y deforma todo (y en `mesa_valley` espeja el lado del acantilado). Inicio del jugador en tierra firme (`_dry_point`); rutas
+  opcionales con reintentos (`_retry`) que no vuelven «fallido» el mapa. Editor: diálogo «Generar paisaje» con tipo, tamaño y semilla, y botón en la barra.
+- Límites: los ríos tallados siguiendo un trazado avisan `river_uphill` donde el relieve sube; el sendero de bajada del cañón avisa `path_too_steep`
+  (zigzags); la vegetación de `mesa_valley` es escasa a propósito.

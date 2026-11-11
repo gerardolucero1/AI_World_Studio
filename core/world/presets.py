@@ -86,11 +86,22 @@ def highland_lake(size_m: float = 1536.0, seed: int = 1, trees: bool = True) -> 
                                "note": "the ring of border mountains is deliberately not walkable; the climbable mountain is"}}
 
 
-GENERATORS = {"highland_lake": highland_lake}
+from core.world.presets_extra import canyon, mesa_valley, river_valley  # noqa: E402
+
+GENERATORS = {"highland_lake": highland_lake, "mesa_valley": mesa_valley, "river_valley": river_valley, "canyon": canyon}
+PRESETS.update({
+    "mesa_valley": "Genshin-style valley: green floor among stepped mesas with sheer grey walls and pines on top, tall rocky mountains behind, "
+                   "a long cliff on one side, ponds with a landmark tree, a waterfall off the cliff, a trail up a mesa.",
+    "river_valley": "Rolling meadows and wooded hills; a big river meanders from the northern range to the southern edge, an oxbow lake, "
+                    "low ranges framing east and west, a riverside trail.",
+    "canyon": "High tableland cut by a winding canyon with stepped walls and a river at the bottom, a side gorge, buttes on the rim, "
+              "and a switchback trail from the rim down to the river.",
+})
 
 
 def generate_landscape(preset: str = "highland_lake", size_m: float = 1536.0, seed: int = 1) -> dict:
-    """Generate a complete landscape in one call (replaces the current world). Presets: highland_lake. Then inspect with capture_world_view and validate_world."""
+    """Generate a complete landscape in one call (replaces the current world). Presets: highland_lake, mesa_valley, river_valley, canyon.
+    Then inspect with capture_world_view and validate_world."""
     if preset not in GENERATORS:
         return {"ok": False, "error": f"unknown preset {preset!r}; available: {list(PRESETS)}"}
     if size_m < 512 or size_m > 6000:
