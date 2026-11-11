@@ -26,6 +26,7 @@ void main(){ n=nrm; h=pos.y; wp=pos.xz; gl_Position=mvp*vec4(pos,1.0); }"""
 FS = """#version 330 core
 in vec3 n; in float h; in vec2 wp; uniform vec3 ground; uniform vec2 worldSize;
 uniform sampler2D paint0; uniform sampler2D paint1; uniform vec3 mats[8];
+uniform sampler2D overlayTex; uniform int useOverlay;
 out vec4 c;
 void main(){
   vec3 L=normalize(vec3(0.4,0.8,0.3)); float d=max(dot(normalize(n),L),0.0);
@@ -39,6 +40,7 @@ void main(){
     vec3 pc=(mats[0]*p0.r+mats[1]*p0.g+mats[2]*p0.b+mats[3]*p0.a+mats[4]*p1.r+mats[5]*p1.g+mats[6]*p1.b+mats[7]*p1.a)/cov;
     base=mix(base,pc,clamp(cov,0.0,1.0));
   }
+  if(useOverlay==1){ vec4 ov=texture(overlayTex,uv); base=mix(base,ov.rgb,ov.a); }
   float amb=0.42+0.18*n.y; c=vec4(base*(amb+0.7*d),1.0);
 }"""
 VS_VEG = """#version 330 core
@@ -125,6 +127,9 @@ class TerrainViewport(QOpenGLWidget):
         self._paint_dirty = False
         self._veg_count = 0
         self._tex = (0, 0)
+        self.overlay = "none"             # analysis layer drawn over the terrain (render/overlays.py)
+        self._ov_tex = 0
+        self._ov_rev = -1                 # session revision the overlay texture was computed for
         self._feat_lines: list[tuple[tuple, np.ndarray]] = []  # (color, Nx3 points)
         self._handles: list[dict] = []    # editable curves: {op, key, closed, pts (N,2), idx (handle point indices)}
         self._grab: tuple[dict, int] | None = None   # (curve, point index) being dragged
@@ -236,7 +241,8 @@ class TerrainViewport(QOpenGLWidget):
         self._veg_prog = _program(VS_VEG, FS_VEG)
         self._init_veg_buffers()
         self._tex = tuple(gl.glGenTextures(2))
-        for t in self._tex:
+        self._ov_tex = int(gl.glGenTextures(1))
+        for t in (*self._tex, self._ov_tex):
             gl.glBindTexture(gl.GL_TEXTURE_2D, t)
             gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
             gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
@@ -306,9 +312,13 @@ class TerrainViewport(QOpenGLWidget):
         sx, sz = self.hf.size
         gl.glUniform2f(gl.glGetUniformLocation(self._prog, "worldSize"), sx, sz)
         gl.glUniform3fv(gl.glGetUniformLocation(self._prog, "mats"), 8, np.ascontiguousarray(COLORS))
-        for unit, t, name in ((0, self._tex[0], "paint0"), (1, self._tex[1], "paint1")):
+        use_ov = self._sync_overlay()
+        gl.glUseProgram(self._prog)
+        for unit, t, name in ((0, self._tex[0], "paint0"), (1, self._tex[1], "paint1"), (2, self._ov_tex, "overlayTex")):
             gl.glActiveTexture(gl.GL_TEXTURE0 + unit); gl.glBindTexture(gl.GL_TEXTURE_2D, t)
             gl.glUniform1i(gl.glGetUniformLocation(self._prog, name), unit)
+        gl.glUniform1i(gl.glGetUniformLocation(self._prog, "useOverlay"), 1 if use_ov else 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
         for vao, _, count, _ in self._chunks.values():
             gl.glBindVertexArray(vao)
             gl.glDrawElements(gl.GL_TRIANGLES, count, gl.GL_UNSIGNED_INT, None)
@@ -363,6 +373,24 @@ class TerrainViewport(QOpenGLWidget):
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self._veg_inst)
         gl.glBufferData(gl.GL_ARRAY_BUFFER, max(inst.nbytes, 28), inst if len(inst) else None, gl.GL_DYNAMIC_DRAW)
         self._veg_count = len(inst)
+
+    def set_overlay(self, mode: str) -> None:
+        self.overlay = mode
+        self._ov_rev = -1
+        self.update()
+
+    def _sync_overlay(self) -> bool:
+        """Recompute the analysis layer when the world changed (it is cheap except 'walkable', which routes the whole map)."""
+        if self.overlay == "none":
+            return False
+        if self._ov_rev != self.session.revision:
+            from render.overlays import overlay_rgba
+            img = overlay_rgba(self.hf, self.op_log, self.overlay)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, self._ov_tex)
+            gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 1)
+            gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, self.hf.nx, self.hf.ny, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, img)
+            self._ov_rev = self.session.revision
+        return True
 
     def _sync_paint(self) -> None:
         if not self._paint_dirty:

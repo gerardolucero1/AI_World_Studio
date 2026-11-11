@@ -17,14 +17,14 @@ Se trabaja en Windows: Godot 4.7.2 en `~/Downloads/Godot_v4.7.2-stable_win64.exe
 
 ## Cómo se usa
 - Agente: herramientas MCP `ai-world-studio` (`.mcp.json`; si no aparecen, reiniciar la sesión) o CLI: `python awstudio.py call <tool> '<json>'`.
-  `python awstudio.py tools` lista las 55 herramientas; `docs/TOOLS.md` las documenta (`python awstudio.py docs` lo regenera).
+  `python awstudio.py tools` lista las 56 herramientas; `docs/TOOLS.md` las documenta (`python awstudio.py docs` lo regenera).
 - Rápido: `python awstudio.py generate highland_lake --size 1024 --seed 3 --save X.awp --godot-project <proyecto> --subfolder generated_worlds/nombre`.
 - UI: `python awstudio.py ui` (Archivo → Generar paisaje de ejemplo Ctrl+G; Exportar a Godot Ctrl+E). REST: `awstudio.py api`.
 - Tests: `pytest -q` (≈3 min; incluye importaciones, navegación y Terrain3D en Godot real si `find_godot` lo encuentra / `$AWS_GODOT`, y el addon
-  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 98 en verde (incluye el editor PySide6 sin pantalla). Venv: `.venv/Scripts/python.exe`.
+  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 102 en verde (≈2,8 min; incluye el editor PySide6 sin pantalla). Venv: `.venv/Scripts/python.exe`.
 
 ## Mapa del código
-`core/world/session.py` (WorldSession: operaciones, undo, checkpoints) y `service.py` (las 55 herramientas, única fuente para UI/CLI/REST/MCP; el editor comparte la misma `SESSION`) ·
+`core/world/session.py` (WorldSession: operaciones, undo, checkpoints) y `service.py` (las 56 herramientas, única fuente para UI/CLI/REST/MCP; el editor comparte la misma `SESSION`) ·
 `core/world/presets.py` (`highland_lake`) · `core/history/operations.py` (registro de operaciones, replay) · `terrain/` (heightfield, pinceles, procedural,
 erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos, `paths/` con `routing.py`: rutas, `route_river`, transitabilidad) ·
 `geometry/cliffs` (muralla de mesetas) · `biomes/` (máscaras, dispersión) · `materials/` · `validation/` · `render/preview.py` (vistas headless para agentes) ·
@@ -62,6 +62,8 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
   cualquier operación; se guarda en el `.awp` como `origin.npy`; proyectos viejos sin él no se pueden editar). Por eso todo cambio de terreno debe
   quedar como operación: las pinceladas del editor se registran como `brush` (lista de dabs). Repetir sin cambios da el terreno idéntico.
   Tras cambiar el terreno, `session.reground()` reasienta vegetación y objetos (antes flotaban hasta reabrir).
+- `water_mask` rasteriza los lagos con PIL dentro de su caja (antes `_poly_sdf` sobre todo el mapa: 10 s en 1536 m; ahora 0,16 s). Si algo es lento,
+  perfilar antes de cachear: suele ser un cálculo por celda sobre todo el mapa.
 - **Godot headless NO compila shaders ni dibuja**: para ver el resultado usa `screenshot_with_godot` (ventana real) o el editor vía MCP. Verifica siempre con capturas.
 - No guardar pesos en el canal alfa de PNG (Godot "arregla" el RGB de píxeles transparentes → rampas negras): splat maps en RGB opaco (3 texturas).
 - Texturas usadas en 3D pueden recomprimirse con pérdida: datos exactos (alturas) van en `.tres` ImageTexture (RG8 en base64), no en PNG.
@@ -80,7 +82,8 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
    senderos con su propia id de textura (hoy `dirt` = id 1). Flores y más hierba.
 3. Formaciones de roca (arcos, pilares, salientes); acantilados como geometría real en las terrazas. 4. Más presets (cañón, costa, pradera abierta).
 5. Editar features creados (`modify_*`), dependencias y aviso de "desactualizado"; reordenar/desactivar operaciones. 6. UI: ~~diálogo de exportación~~, ~~colocar objetos~~, ~~editar curvas (ríos, senderos, lagos)~~ (hechos). Faltan: editar otras operaciones
-   desde la UI (montañas, mesetas: hoy solo vía `modify_operation`), overlays, panel de actividad del agente, pinceles nuevos.
+   desde la UI ~~(hecho: panel Historial con parámetros y activar/desactivar)~~, ~~overlays~~ (altura, pendiente, agua, transitable). Faltan:
+   panel de actividad del agente (el MCP corre en otro proceso: habría que servir la sesión del editor), pinceles nuevos, biblioteca de assets.
 7. Cascadas con colisión/sonido/salpicaduras; ríos que se unen. 8. Validador completo, AWP completo, procedencia de assets, probar otras versiones de Godot (solo 4.7.2 probado).
 
 ## Desarrollo

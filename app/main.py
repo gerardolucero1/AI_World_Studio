@@ -24,7 +24,9 @@ MATERIAL_ES = {"grass": "Pasto", "dirt": "Tierra", "rock": "Roca", "snow": "Niev
 OP_ES = {"noise": "Relieve base", "mountain": "Montaña", "mountain_range": "Cordillera", "plateau": "Meseta",
          "cliff_plateau": "Meseta con paredes", "valley": "Valle", "basin": "Cuenca", "river": "Río", "lake": "Lago",
          "path": "Sendero", "thermal_erosion": "Erosión térmica", "hydraulic_erosion": "Erosión hidráulica",
-         "scatter_vegetation": "Vegetación", "place_objects": "Objetos colocados", "paint_material": "Pintura de suelo", "sculpt": "Pincel", "brush": "Pincel"}
+         "scatter_vegetation": "Vegetación", "place_objects": "Objetos colocados", "paint_material": "Pintura de suelo", "sculpt": "Pincel", "brush": "Pincel",
+         "bowl": "Cuenco", "terrace": "Terrazas", "border_mountains": "Montañas del borde", "cap": "Cima plana",
+         "climbable_mountain": "Montaña escalable"}
 
 
 WARN_ES = {
@@ -271,6 +273,13 @@ class MainWindow(QMainWindow):
         c2 = QCheckBox("Mostrar vegetación"); c2.setChecked(True)
         c2.toggled.connect(lambda on: setattr(self.view, "show_vegetation", on))
         fv.addRow(c1); fv.addRow(c2)
+        from render.overlays import MODES
+        self.c_overlay = QComboBox()
+        for k, (label, _) in MODES.items():
+            self.c_overlay.addItem(label, k)
+        self.lbl_overlay = QLabel(); self.lbl_overlay.setWordWrap(True); self.lbl_overlay.setStyleSheet("color:#4b5563;font-size:11px;")
+        self.c_overlay.currentIndexChanged.connect(self._overlay_changed)
+        fv.addRow("Capa de análisis", self.c_overlay); fv.addRow(self.lbl_overlay)
         lay.addWidget(gv)
 
         self.warn = QLabel(); self.warn.setWordWrap(True)
@@ -284,8 +293,12 @@ class MainWindow(QMainWindow):
         self._sync_scales()
 
     def _build_history_dock(self):
-        self.hist = QListWidget()
-        d = QDockWidget("Historial"); d.setWidget(self.hist); d.setFeatures(QDockWidget.DockWidgetMovable)
+        from app.op_editor import OpEditor
+        self.ops = OpEditor(OP_ES, lambda w: WARN_ES.get(w.get("code"), w.get("message", "")))
+        self.ops.set_session(self.session)
+        self.ops.apply_requested.connect(lambda i, params, en: self._modify(i, params, en))
+        self.hist = self.ops.list
+        d = QDockWidget("Historial"); d.setWidget(self.ops); d.setFeatures(QDockWidget.DockWidgetMovable)
         self.addDockWidget(Qt.RightDockWidgetArea, d)
         self.tabifyDockWidget(self.props_dock, d); self.props_dock.raise_()
 
@@ -332,10 +345,7 @@ class MainWindow(QMainWindow):
 
     def refresh(self):
         self.a_undo.setEnabled(self.session.history.can_undo); self.a_redo.setEnabled(self.session.history.can_redo)
-        self.hist.clear()
-        for i, op in enumerate(self.session.op_log, 1):
-            w = (op.result or {}).get("warnings", [])
-            self.hist.addItem(f"{i}. {OP_ES.get(op.kind, op.kind)}" + ("   ⚠" if w else ""))
+        self.ops.refresh()
         name = self.session.name + (f" — {self.session.path}" if self.session.path else " (sin guardar)")
         self.setWindowTitle(f"AI World Studio — {name}")
 
@@ -367,18 +377,21 @@ class MainWindow(QMainWindow):
 
     def on_curve_edited(self, index: int, pts: list):
         """A handle of a river/trail/lake was dragged: change that operation and replay the world (dependent features adapt)."""
+        from features.curves.edit import EDITABLE
+        self._modify(index, {EDITABLE[self.session.op_log[index].kind][0]: pts})
+
+    def _modify(self, index: int, params: dict, enabled=None):
+        """Change a past operation (parameters and/or on/off) and replay the world from the original terrain."""
         if not self.session.can_modify:
             QMessageBox.information(self, "No se puede editar", "Este mundo se abrió sin su terreno original (proyecto antiguo): "
                                     "guárdalo y vuelve a abrirlo, o crea el elemento de nuevo."); return
-        from features.curves.edit import EDITABLE
         op = self.session.op_log[index]
-        key = EDITABLE[op.kind][0]
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self.session.modify(index, {key: pts})
+            self.session.modify(index, params, enabled=enabled)
         except Exception as ex:  # noqa: BLE001
             QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, "No se pudo editar", f"{type(ex).__name__}: {ex}"); return
+            QMessageBox.warning(self, "No se pudo cambiar", f"{type(ex).__name__}: {ex}"); return
         QApplication.restoreOverrideCursor()
         self.view.apply_modify()
         warns = [(i, w) for i, o in enumerate(self.session.op_log) if i >= index for w in (o.result or {}).get("warnings", [])]
@@ -388,7 +401,19 @@ class MainWindow(QMainWindow):
             self.warn.show()
         else:
             self.warn.hide()
-        self.statusBar().showMessage(f"{OP_ES.get(op.kind, op.kind)} editado; se rehízo todo lo que depende de él.", 6000)
+        what = "desactivada" if enabled is False else ("activada" if enabled else "cambiada")
+        self.statusBar().showMessage(f"{OP_ES.get(op.kind, op.kind)} {what}; se rehízo todo lo que depende de ella.", 6000)
+
+    def _overlay_changed(self, *_):
+        from render.overlays import MODES
+        mode = self.c_overlay.currentData()
+        self.lbl_overlay.setText(MODES[mode][1])
+        if mode == "walkable":
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.view.set_overlay(mode)
+        self.view.repaint()
+        if mode == "walkable":
+            QApplication.restoreOverrideCursor()
 
     def _place_marker(self):
         from biomes.scatter.place import KINDS

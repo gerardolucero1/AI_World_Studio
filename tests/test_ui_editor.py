@@ -145,3 +145,24 @@ def test_dragging_a_river_handle_reroutes_it(window):
     assert window.view._handles[0]["pts"].tolist() == new                     # handles follow the edited curve
     window.view.undo()
     assert np.allclose(before, window.session.hf.data) and op.params["path"] != new
+
+
+def test_history_panel_edits_and_disables_operations(window):
+    from core.world import service as S
+    S.create_world("ui", 256, 129)
+    S.create_mountain(128, 128, 60, 30); S.scatter_vegetation(["bushes"], seed=1)
+    window.refresh()
+    ed = window.ops
+    assert ed.list.count() == 2
+    ed.list.setCurrentRow(0)
+    assert "height" in ed._fields and "path" not in ed._fields
+    ed._fields["height"].setValue(55.0)
+    assert ed.changes() == ({"height": 55.0}, None)
+    ed._apply()
+    assert window.session.op_log[0].params["height"] == 55.0 and window.session.hf.sample(128, 128) > 50
+    assert ed.list.currentRow() == 0                                     # selection kept after the replay
+    ed.list.setCurrentRow(1); ed.ch_enabled.setChecked(False); ed._apply()
+    assert not window.session.op_log[1].enabled and window.session.op_log[1].result is None
+    assert ed.list.item(1).text().endswith("(desactivada)")
+    window.view.undo()
+    assert window.session.op_log[1].enabled and len(window.session.op_log[1].result["_instances"]) > 0

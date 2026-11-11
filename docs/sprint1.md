@@ -195,3 +195,8 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   largo de la curva (los recorridos autoenrutados tienen cientos de puntos); vista previa amarilla; al soltar, `modify` y aviso de lo que se rompió.
 - Límites: solo curvas (río, sendero, lago) desde la UI; montañas, mesetas, etc. se editan con `modify_operation`. El sendero en espiral de la montaña
   escalable junta muchas asas. Los ríos/senderos automáticos (`create_river_auto`, `create_trail`) se editan como recorrido fijo (no vuelven a enrutarse).
+
+- Panel Historial (`app/op_editor.py`): al elegir una operación se editan sus parámetros numéricos/booleanos y «Activa»; aplicar = `session.modify`
+  (también `set_operation_enabled`). Una operación desactivada no deja resultado (agua, vegetación, avisos).
+- Capas de análisis (`render/overlays.py`, combo «Capa de análisis»): altura con curvas cada 10 m, pendiente (caminar/cuesta/límite/trepar), agua y
+  orillas, transitable a pie desde el inicio. Se recalculan por revisión. Para que fueran interactivas hubo que acelerar `water_mask` (lagos con PIL).

@@ -385,6 +385,20 @@ def modify_operation(index: int, params: dict) -> dict:
         return _err(e)
 
 
+def set_operation_enabled(index: int, enabled: bool) -> dict:
+    """Turn an applied operation off (or back on) without deleting it: the world is replayed without it, so you can compare
+    (e.g. the world without a mountain range, or without the second river). One step: undo restores it."""
+    s = SESSION
+    try:
+        s.modify(index, None, enabled=bool(enabled))
+        op = s.op_log[index]
+        return {"ok": True, "index": index, "operation": op.kind, "enabled": op.enabled, "revision": s.revision,
+                "later_warnings": {i: [w.get("code") for w in (o.result or {}).get("warnings", [])] for i, o in enumerate(s.op_log)
+                                   if i > index and (o.result or {}).get("warnings")}}
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
 def place_objects(objects: list[dict]) -> dict:
     """Place individual objects exactly where you want them (a landmark tree, a boulder, a lone pine), grounded on the terrain.
     objects: [{"kind": oak|pine|shrub|reed|rock, "x": m, "y": m, "scale": 1.0 (3 = a huge landmark tree), "yaw": deg, "sink": m into the ground}].
@@ -677,6 +691,6 @@ def get_export_status(task_id: str | None = None) -> dict:
 TOOLS = [get_capabilities, create_world, set_world_style, generate_landscape, get_world_info, get_terrain_info, save_world, load_world, sculpt_terrain, raise_terrain, lower_terrain,
          smooth_terrain, flatten_terrain, apply_terrain_noise, create_mountain, create_mountain_range, create_valley, create_bowl, terrace_terrain, create_border_mountains, create_basin,
          create_plateau, create_cliff, apply_erosion, get_task_status, cancel_task, create_river, create_river_auto, create_lake, create_path, create_trail, create_climbable_mountain, analyze_traversability,
-         scatter_vegetation, place_objects, modify_operation, paint_terrain_material, inspect_terrain, inspect_region, analyze_elevation, analyze_slope,
+         scatter_vegetation, place_objects, modify_operation, set_operation_enabled, paint_terrain_material, inspect_terrain, inspect_region, analyze_elevation, analyze_slope,
          detect_terrain_issues, validate_world, get_world_preview, capture_world_view, create_checkpoint, rollback_to_checkpoint,
          compare_world_versions, undo, redo, list_operations, prepare_godot_export, inspect_godot_project, export_to_godot, get_export_status]

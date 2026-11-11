@@ -19,6 +19,23 @@ def _grid_xy(hf: Heightfield):
     return np.meshgrid(np.arange(hf.nx) * c, np.arange(hf.ny) * c)
 
 
+def poly_inside(hf: Heightfield, poly) -> np.ndarray:
+    """Grid vertices inside a polygon (metres). Rasterised within the polygon's bounding box: ~1000x faster than a signed distance
+    over the whole map, and identical except possibly for vertices lying exactly on the outline."""
+    from PIL import Image, ImageDraw
+    c = hf.cell_size
+    pts = np.asarray(poly, np.float64) / c                       # in grid units (vertex i at x = i)
+    i0, j0 = max(int(np.floor(pts[:, 0].min())) - 1, 0), max(int(np.floor(pts[:, 1].min())) - 1, 0)
+    i1, j1 = min(int(np.ceil(pts[:, 0].max())) + 2, hf.nx), min(int(np.ceil(pts[:, 1].max())) + 2, hf.ny)
+    out = np.zeros(hf.data.shape, bool)
+    if i1 <= i0 or j1 <= j0:
+        return out
+    img = Image.new("1", (i1 - i0, j1 - j0), 0)
+    ImageDraw.Draw(img).polygon([(float(x - i0), float(y - j0)) for x, y in pts], fill=1, outline=None)
+    out[j0:j1, i0:i1] = np.array(img, bool)
+    return out
+
+
 def water_mask(hf: Heightfield, log) -> np.ndarray:
     """True where a river channel or lake surface exists (from the operation results)."""
     mask = np.zeros(hf.data.shape, bool)
@@ -35,7 +52,7 @@ def water_mask(hf: Heightfield, log) -> np.ndarray:
             from features.curves.curve import sample_curve
             poly = r["polygon"]
             outline = sample_curve(poly + [poly[0]], hf.cell_size * 2).astype(np.float32)
-            mask |= (_poly_sdf(X, Y, outline) <= 0) & (hf.data < r["level"] + 0.05)
+            mask |= poly_inside(hf, outline) & (hf.data < r["level"] + 0.05)
     return mask
 
 

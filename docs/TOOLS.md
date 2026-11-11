@@ -160,6 +160,11 @@ Change the parameters of an operation already applied (see list_operations for i
 path, a lake's polygon, a mountain's height, a trail's end. Everything after it is replayed from the original terrain, so dependent
 features adapt. Only the keys you give change. One step: undo restores the previous version.
 
+## `set_operation_enabled(index: 'int', enabled: 'bool') -> 'dict'`
+
+Turn an applied operation off (or back on) without deleting it: the world is replayed without it, so you can compare
+(e.g. the world without a mountain range, or without the second river). One step: undo restores it.
+
 ## `paint_terrain_material(x: 'float', y: 'float', radius: 'float', material: 'str', strength: 'float' = 1.0, hardness: 'float' = 0.3) -> 'dict'`
 
 Paint a surface material over rule-based materials. material: grass|dirt|rock|snow|sand|mud|wet_rock|gravel.

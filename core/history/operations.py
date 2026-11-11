@@ -73,6 +73,7 @@ CONTEXTUAL = {"scatter_vegetation", "place_objects"}
 
 def run(hf: Heightfield, op: Operation, log=()) -> Rect | None:
     if not op.enabled:
+        op.result = None                 # a disabled operation leaves nothing behind (no water, no vegetation, no warnings)
         return None
     if op.kind not in REGISTRY:
         raise KeyError(f"unknown operation {op.kind!r}")

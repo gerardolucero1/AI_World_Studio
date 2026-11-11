@@ -89,7 +89,7 @@ class WorldSession:
     def can_modify(self) -> bool:
         return self.origin is not None
 
-    def modify(self, index: int, params: dict) -> Rect:
+    def modify(self, index: int, params: dict | None = None, enabled: bool | None = None) -> Rect:
         """Change the parameters of a past operation (e.g. move a river's points) and replay everything from the original terrain:
         later operations adapt (lakes, vegetation, trails...). One undoable step."""
         from core.history.operations import rebuild
@@ -100,14 +100,16 @@ class WorldSession:
             if not 0 <= index < len(self.op_log):
                 raise IndexError(f"operation index {index} out of range (0..{len(self.op_log) - 1})")
             op = self.op_log[index]
-            old_params, old_results = op.params, [o.result for o in self.op_log]
+            old_params, old_results, old_enabled = op.params, [o.result for o in self.op_log], op.enabled
             hf2 = Heightfield(self.hf.nx, self.hf.ny, self.hf.cell_size, self.origin.copy())
             hf2.style = dict(self.hf.style)
-            op.params = {**op.params, **params}
+            op.params = {**op.params, **(params or {})}
+            if enabled is not None:
+                op.enabled = bool(enabled)
             try:
                 rebuild(hf2, self.op_log)
             except Exception:
-                op.params = old_params
+                op.params, op.enabled = old_params, old_enabled
                 for o, r in zip(self.op_log, old_results):
                     o.result = r
                 raise
@@ -115,7 +117,8 @@ class WorldSession:
             stroke.before_edit((0, self.hf.ny, 0, self.hf.nx))
             self.hf.data[:] = hf2.data
             stroke.finish()
-            stroke.meta = {"op": op, "params": (old_params, op.params), "results": (old_results, [o.result for o in self.op_log]),
+            stroke.meta = {"op": op, "params": (old_params, op.params), "enabled": (old_enabled, op.enabled),
+                           "results": (old_results, [o.result for o in self.op_log]),
                            "ops": list(self.op_log)}
             self.history.push_always(stroke)
             self.revision += 1
@@ -127,6 +130,7 @@ class WorldSession:
         if not m:
             return
         m["op"].params = m["params"][which]
+        m["op"].enabled = m.get("enabled", (True, True))[which]
         for o, r in zip(m["ops"], m["results"][which]):
             o.result = r
 
