@@ -11,7 +11,7 @@ from exporters.godot.glb import write_glb
 from exporters.godot.terrain_lod import chunk_mesh, lod_steps_for, pick_chunk_cells
 from terrain.heightfield.heightfield import Heightfield
 
-GODOT = "/Applications/Godot.app/Contents/MacOS/Godot"
+from exporters.godot.godot_bin import GODOT
 
 
 def world(res=129, size=256):
@@ -125,7 +125,7 @@ def test_agent_tools():
     assert S.prepare_godot_export()["ok"] is False
 
 
-@pytest.mark.skipif(not Path(GODOT).exists(), reason="Godot not installed")
+@pytest.mark.skipif(not GODOT, reason="Godot not installed")
 def test_real_godot_imports_and_instantiates(tmp_path):
     sess = world(); r = export_world(sess, tmp_path / "GW", ExportSettings(grass=False))
     v = verify_with_godot(tmp_path / "GW")
@@ -166,7 +166,7 @@ def test_relocate_package_rewrites_prefix(tmp_path):
         relocate_package(tmp_path / "GW", "addons/x")
 
 
-@pytest.mark.skipif(not Path(GODOT).exists(), reason="Godot not installed")
+@pytest.mark.skipif(not GODOT, reason="Godot not installed")
 def test_package_works_inside_a_foreign_godot_project_after_relocation(tmp_path):
     """The real use case: drop the generated world into someone else's project, in any folder."""
     from exporters.godot.exporter import relocate_package
@@ -185,7 +185,7 @@ def test_package_works_inside_a_foreign_godot_project_after_relocation(tmp_path)
     assert (host / "project.godot").read_text().count("Other game") == 1           # host untouched
 
 
-@pytest.mark.skipif(not Path(GODOT).exists(), reason="Godot not installed")
+@pytest.mark.skipif(not GODOT, reason="Godot not installed")
 def test_climbable_mountain_is_walkable_to_the_summit_in_real_godot(tmp_path):
     """End to end: generate -> export with a baked NavigationMesh -> Godot's own navigation server finds a walking route from the spawn to the summit."""
     from core.world import service as S
@@ -213,7 +213,7 @@ def test_navigation_modes(tmp_path):
         export_world(sess, tmp_path / "bake", ExportSettings(navigation="bake", godot_binary="/nonexistent/godot", write_project_file=False))
 
 
-@pytest.mark.skipif(not Path(GODOT).exists(), reason="Godot not installed")
+@pytest.mark.skipif(not GODOT, reason="Godot not installed")
 @pytest.mark.parametrize("size,seed", [(1024, 3), (1024, 4)])
 def test_generated_landscape_is_walkable_spawn_to_summit_in_real_godot(tmp_path, size, seed):
     """The product promise: a generated highland world has a spawn point and a climbable summit that Godot's navigation can actually connect."""
@@ -248,7 +248,7 @@ def test_grass_is_gpu_placed_lossless_and_shared(tmp_path):
     assert "Grass" not in (tmp_path / "NoGrass/World.tscn").read_text() and r2["validation"]["ok"]
 
 
-@pytest.mark.skipif(not Path(GODOT).exists(), reason="Godot not installed")
+@pytest.mark.skipif(not GODOT, reason="Godot not installed")
 def test_grass_loads_in_real_godot(tmp_path):
     sess = world(); export_world(sess, tmp_path / "GW")
     v = verify_with_godot(tmp_path / "GW")

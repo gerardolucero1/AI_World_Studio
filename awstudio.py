@@ -36,7 +36,7 @@ def cmd_generate(a) -> int:
     if a.save:
         _print(S.save_world(a.save))
     if a.godot_project or a.out:
-        e = S.export_to_godot(path=a.out, godot_project=a.godot_project, subfolder=a.subfolder, verify=a.verify, profile=a.profile, include_preview=not a.no_preview, navigation=a.navigation, grass=not a.no_grass)
+        e = S.export_to_godot(path=a.out, godot_project=a.godot_project, subfolder=a.subfolder, verify=a.verify, profile=a.profile, include_preview=not a.no_preview, navigation=a.navigation, grass=not a.no_grass, terrain=a.terrain, terrain3d_addon=a.terrain3d_addon)
         _print({k: v for k, v in e.items() if k != "validation"}); return 0 if e["ok"] else 1
     return 0
 
@@ -46,7 +46,7 @@ def cmd_export(a) -> int:
     r = S.load_world(a.world)
     if not r["ok"]:
         _print(r); return 1
-    e = S.export_to_godot(path=a.out, godot_project=a.godot_project, subfolder=a.subfolder, verify=a.verify, profile=a.profile, include_preview=not a.no_preview, navigation=a.navigation, grass=not a.no_grass)
+    e = S.export_to_godot(path=a.out, godot_project=a.godot_project, subfolder=a.subfolder, verify=a.verify, profile=a.profile, include_preview=not a.no_preview, navigation=a.navigation, grass=not a.no_grass, terrain=a.terrain, terrain3d_addon=a.terrain3d_addon)
     _print({k: v for k, v in e.items() if k != "validation"}); return 0 if e["ok"] else 1
 
 
@@ -96,10 +96,12 @@ def main() -> int:
     for p in (g,):
         p.add_argument("--godot-project"); p.add_argument("--out"); p.add_argument("--subfolder", default="GodotWorld"); p.add_argument("--verify", action="store_true")
         p.add_argument("--profile", choices=["full", "compatible"], default="full", help="compatible = also runs on the Compatibility renderer"); p.add_argument("--no-preview", action="store_true"); p.add_argument("--navigation", choices=["auto", "bake", "python", "none"], default="auto"); p.add_argument("--no-grass", action="store_true")
+        p.add_argument("--terrain", choices=["mesh", "terrain3d"], default="mesh", help="terrain3d = Terrain3D node + regions (needs the addon)"); p.add_argument("--terrain3d-addon")
     g.set_defaults(fn=cmd_generate)
     e = sub.add_parser("export"); e.add_argument("world"); e.add_argument("--godot-project"); e.add_argument("--out")
     e.add_argument("--subfolder", default="GodotWorld"); e.add_argument("--verify", action="store_true")
-    e.add_argument("--profile", choices=["full", "compatible"], default="full"); e.add_argument("--no-preview", action="store_true"); e.add_argument("--navigation", choices=["auto", "bake", "python", "none"], default="auto"); e.add_argument("--no-grass", action="store_true"); e.set_defaults(fn=cmd_export)
+    e.add_argument("--profile", choices=["full", "compatible"], default="full"); e.add_argument("--no-preview", action="store_true"); e.add_argument("--navigation", choices=["auto", "bake", "python", "none"], default="auto"); e.add_argument("--no-grass", action="store_true")
+    e.add_argument("--terrain", choices=["mesh", "terrain3d"], default="mesh"); e.add_argument("--terrain3d-addon"); e.set_defaults(fn=cmd_export)
     r = sub.add_parser("relocate"); r.add_argument("package"); r.add_argument("--prefix", required=True); r.set_defaults(fn=cmd_relocate)
     sub.add_parser("tools").set_defaults(fn=cmd_tools)
     c = sub.add_parser("call"); c.add_argument("tool"); c.add_argument("args", nargs="?"); c.add_argument("--world"); c.add_argument("--save"); c.set_defaults(fn=cmd_call)

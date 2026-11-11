@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "ai-world-studio": {
-      "command": ".venv/bin/python",
+      "command": ".venv/Scripts/python.exe",
       "args": ["-m", "mcp_server.server"]
     }
   }

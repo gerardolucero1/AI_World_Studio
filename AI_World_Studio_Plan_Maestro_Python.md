@@ -887,7 +887,7 @@ Objetivo de referencia visual: Genshin Impact / Zelda BOTW. Proyecto de pruebas 
 | 13 | AWP | **Parcial**: `project.json` + heightfield + `ops.json` + estilo; falta separación de capas y versiones en disco |
 | 14 | API / MCP | **Hecho en su mayor parte**: 52 herramientas (MCP/REST/CLI), tareas asíncronas, checkpoints |
 | 15 | Flujo autónomo | **Parcial**: sin modos Assisted/Autonomous/Batch ni autocorrección automática |
-| 16 | Exportador Godot | **Hecho en lo esencial**: chunks GLB + LOD + colisión, agua/cascadas, vegetación MultiMesh, hierba GPU, shaders estilizados, navegación Recast, marcadores, manifiesto, validación, reubicación. Falta **Terrain3D**, streaming, partículas |
+| 16 | Exportador Godot | **Hecho en lo esencial**: chunks GLB + LOD + colisión **o Terrain3D** (regiones horneadas con el addon real, 8 texturas, mapa de control, colisión, navegación), agua/cascadas, vegetación MultiMesh, hierba GPU, shaders estilizados, navegación Recast, marcadores, manifiesto, validación, reubicación. Faltan streaming, partículas |
 | 17 | Interfaz | **Parcial**: en español, herramientas por modo, historial, generador y exportador. Faltan editor de curvas, biblioteca de assets, panel de agente |
 | 21 | Pruebas | **Hecho en lo esencial**: 78 pruebas (con Godot real). Faltan rendimiento y otras versiones de Godot |
 | 23 | Procedencia de assets | **No hecho** (todo es procedural y propio por ahora) |
@@ -910,7 +910,8 @@ Ver `CLAUDE.md` («Lecciones técnicas»): Godot headless no dibuja ni compila s
 límite de 4096 polígonos de `map_get_path`; colisión a la misma resolución que la malla; no abrir el proyecto receptor con Godot (copia temporal); rampas ≥ 6 m; `custom_aabb` en MultiMesh con shader.
 
 ### 28.6 Próximos pasos (orden recomendado)
-1. **Exportar a Terrain3D** (regiones desde el heightmap `.r16` + splat → texturas de Terrain3D) para usar el terreno y el shader toon del juego del usuario.
+1. ~~Exportar a Terrain3D~~ **Hecho** (10/11/2026, `terrain="terrain3d"`, ver `docs/sprint1.md` fase 9). Probado en el juego del usuario (`wicktale`,
+   antes `prubas-3d`) con su material toon sacado de `tallow_hills.tscn`. Pendiente: recorrerlo con su jugador y marcar senderos con textura propia.
 2. Flores y hierba más rica (interacción con el jugador, estilo del juego), cascadas con colisión/sonido/salpicaduras.
 3. Formaciones de roca singulares (arcos, pilares, salientes) y acantilados de terraza como geometría real.
 4. Más presets (cañón, costa, pradera abierta, valle fluvial) y variantes del `highland_lake`.

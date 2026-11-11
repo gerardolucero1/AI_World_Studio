@@ -213,7 +213,7 @@ Operations applied so far (kind, params, warnings).
 
 Dry run: chunk grid, LOD levels, instance counts and likely problems, without writing files.
 
-## `export_to_godot(path: 'str | None' = None, chunk_cells: 'int | None' = None, res_prefix: 'str' = 'res://', verify: 'bool' = False, background: 'bool' = False, godot_project: 'str | None' = None, subfolder: 'str' = 'GodotWorld', profile: 'str' = 'full', include_preview: 'bool' = True, navigation: 'str' = 'auto', grass: 'bool' = True, grass_spacing: 'float' = 1.5) -> 'dict'`
+## `export_to_godot(path: 'str | None' = None, chunk_cells: 'int | None' = None, res_prefix: 'str' = 'res://', verify: 'bool' = False, background: 'bool' = False, godot_project: 'str | None' = None, subfolder: 'str' = 'GodotWorld', profile: 'str' = 'full', include_preview: 'bool' = True, navigation: 'str' = 'auto', grass: 'bool' = True, grass_spacing: 'float' = 1.5, terrain: 'str' = 'mesh', terrain3d_addon: 'str | None' = None, terrain3d_material: 'str | None' = None, terrain3d_assets: 'str | None' = None, terrain3d_texture_ids: 'dict | None' = None, terrain3d_collision: 'str' = 'full') -> 'dict'`
 
 Export the world as a Godot 4.7 scene package (World.tscn + GLB chunks with LOD/collision, water, cliffs, vegetation MultiMeshes,
 stylized materials/shaders, textures, manifest). Two ways to call it:
@@ -223,6 +223,10 @@ World.tscn contains ONLY the world (terrain, water, cliffs, vegetation, PlayerSt
 Preview.tscn adds sun/sky/camera for a quick look (include_preview). profile='compatible' also runs on the Compatibility renderer.
 grass: tall grass tufts placed on the GPU (no per-tuft data stored); grass_spacing = metres between tufts (denser looks lusher but draws more).
 navigation: 'auto' (default: bake a NavigationMesh with Godot's own baker if the Godot binary is found, else skip) | 'bake' | 'python' (coarse; narrow trails may disconnect) | 'none'.
+terrain: 'mesh' (GLB chunks, no addon needed) | 'terrain3d' (a Terrain3D node with baked regions + 8 textures; needs the Terrain3D addon in
+godot_project/addons/terrain_3d, or terrain3d_addon=<addon folder>; standalone exports bundle the addon). To use the game's own Terrain3D look pass
+terrain3d_material / terrain3d_assets (res:// paths in the project) and terrain3d_texture_ids ({"grass": 0, "rock": 1, ...}: our 8 materials ->
+its texture slots). terrain3d_collision: 'full' | 'dynamic'.
 Refuses to overwrite a non-empty folder that is not a previous export. verify=True imports it in the real Godot (headless) and checks it.
 
 ## `get_export_status(task_id: 'str | None' = None) -> 'dict'`

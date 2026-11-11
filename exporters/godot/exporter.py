@@ -24,8 +24,10 @@ from biomes.masks.masks import water_mask
 from materials.materials import COLORS, MATERIALS, final_weights
 
 EXPORT_FORMAT_VERSION = 1
+from exporters.godot.godot_bin import find_godot
+
 GODOT_VERSION = "4.7.2"
-GENERATED = ["Terrain", "Features", "Geometry", "Vegetation", "Materials", "Textures", "WorldData", "Collisions", "Navigation"]
+GENERATED = ["Terrain", "Terrain3D", "Features", "Geometry", "Vegetation", "Materials", "Textures", "WorldData", "Collisions", "Navigation"]
 MAX_INSTANCES = 300_000
 LIBRARY = Path(__file__).parent / "library"
 GREEN_TINTS = [((1.0, 1.0, 1.0), 0.52), ((1.25, 1.15, 0.45), 0.17), ((1.6, 0.85, 0.35), 0.11), ((0.88, 1.05, 0.95), 0.20)]   # autumn mix
@@ -60,10 +62,18 @@ class ExportSettings:
     markers: bool = True                           # PlayerStart marker + trails/rivers as Path3D nodes
     navigation: str = "none"                       # "bake" (Godot's Recast baker, needs the Godot binary; reliable) | "python" (coarse mesh built here; narrow
                                                    # trails can disconnect) | "auto" (bake if Godot is found, else none) | "none"
-    godot_binary: str | None = None                # for navigation bake; default: $AWS_GODOT, the macOS app, or `godot` on PATH
+    godot_binary: str | None = None                # for navigation bake; default: see godot_bin.find_godot
     nav_cell_m: float = 4.0                        # python navmesh cell
     nav_bake_cell: float | None = None             # Recast voxel size in m for the bake (None = auto: world/1500 clamped to 0.5..2); smaller = narrower trails stay connected, slower bake
     nav_max_slope_deg: float = 35.0                # walkable slope for the bake: margin below a character's floor angle (typically 45)
+    terrain: str = "mesh"                          # "mesh" (GLB chunks + LOD + collision, no addon needed) | "terrain3d" (Terrain3D node + regions;
+                                                   # needs the Terrain3D addon: in the host project, $AWS_TERRAIN3D_ADDON or terrain3d_addon)
+    terrain3d_addon: str | None = None             # folder of the Terrain3D addon to bake with (default: the host project's addons/terrain_3d)
+    terrain3d_texture_ids: dict | None = None      # our material -> host texture slot, e.g. {"grass": 0, "rock": 1, ...}; None = our 8 textures in order
+    terrain3d_material: str | None = None          # res:// path of the host game's Terrain3DMaterial (e.g. its toon shader); None = Terrain3D/material.tres
+    terrain3d_assets: str | None = None            # res:// path of the host game's Terrain3DAssets (texture list); None = Terrain3D/assets.tres
+    terrain3d_collision: str = "full"              # "full" (whole terrain, works for NPCs anywhere) | "dynamic" (around the camera; cheaper on big maps)
+    terrain3d_collision_layer: int = 1
 
 
 SHADER_DIR = Path(__file__).parent / "shaders"
@@ -248,6 +258,18 @@ def _fall_mesh(f: dict, rows: int = 14):
 def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSettings | None = None) -> dict:
     s = settings or ExportSettings()
     out = Path(out_dir)
+    if s.terrain not in ("mesh", "terrain3d"):
+        raise ValueError("terrain must be 'mesh' or 'terrain3d'")
+    t3d_godot = t3d_addon = None
+    if s.terrain == "terrain3d":
+        from exporters.godot.terrain3d import find_terrain3d_addon
+        t3d_godot = _find_godot(s.godot_binary)
+        t3d_addon = find_terrain3d_addon(out, s.terrain3d_addon)
+        if t3d_godot is None:
+            raise ValueError("terrain='terrain3d' needs the Godot binary to bake the regions (set godot_binary or $AWS_GODOT)")
+        if t3d_addon is None:
+            raise ValueError("terrain='terrain3d' needs the Terrain3D addon: install it in the Godot project (addons/terrain_3d), "
+                             "or pass terrain3d_addon / set $AWS_TERRAIN3D_ADDON")
     with session.lock:
         hf, log = session.hf, list(session.op_log)
         if out.exists() and any(out.iterdir()):
@@ -284,8 +306,39 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
         T.node("World", "Node3D", None)
         T.node("Terrain", "Node3D", ".")
 
-        # ---- terrain chunks (LODs + collision in one GLB per chunk)
-        for cy in range(ncy):
+        # ---- terrain: Terrain3D regions (baked by Godot with the real addon) or our GLB chunks
+        t3d_info: dict = {}
+        if s.terrain == "terrain3d":
+            from exporters.godot.terrain3d import bake_terrain3d, copy_addon
+            t3d_info = bake_terrain3d(out, hf, weights, wmask, t3d_godot, t3d_addon, P, s.terrain3d_texture_ids)
+            if not t3d_info.get("ok"):
+                raise RuntimeError(f"Terrain3D bake failed: {t3d_info.get('error')}\n{t3d_info.get('tail', '')}")
+            files += [f.relative_to(out).as_posix() for f in (out / "Terrain3D").rglob("*") if f.is_file()]
+            if s.terrain3d_material and s.terrain3d_material.endswith(".tscn"):     # the game's material lives inside a scene: copy it out
+                from exporters.godot.terrain3d import extract_material, host_project_root
+                host = host_project_root(out)
+                src = host / s.terrain3d_material[len("res://"):] if host else None
+                if src is None or not src.exists():
+                    raise ValueError(f"terrain3d_material {s.terrain3d_material} not found in the Godot project of {out}")
+                mt = extract_material(src)
+                mt = re.sub(r"(?m)^world_background = .*\n", "", mt) + "world_background = 0\n"
+                (out / "Terrain3D/material.tres").write_text(mt, encoding="utf-8")       # no infinite ground plane around a generated world
+                T.ext_res("t3d_mat", "Terrain3DMaterial", "Terrain3D/material.tres")
+            elif s.terrain3d_material:
+                T.ext.append(f'[ext_resource type="Terrain3DMaterial" path="{s.terrain3d_material}" id="t3d_mat"]')
+            else:
+                T.ext_res("t3d_mat", "Terrain3DMaterial", "Terrain3D/material.tres")
+            if s.terrain3d_assets:
+                T.ext.append(f'[ext_resource type="Terrain3DAssets" path="{s.terrain3d_assets}" id="t3d_assets"]')
+            else:
+                T.ext_res("t3d_assets", "Terrain3DAssets", "Terrain3D/assets.tres")
+            T.node("Terrain3D", "Terrain3D", "Terrain", [
+                f"region_size = {t3d_info['region_size']}", f"vertex_spacing = {hf.cell_size}", 'material = ExtResource("t3d_mat")',
+                'assets = ExtResource("t3d_assets")', f'data_directory = "{P}Terrain3D/data"',
+                f"collision_mode = {3 if s.terrain3d_collision == 'full' else 1}", f"collision_layer = {int(s.terrain3d_collision_layer)}"])
+            if s.write_project_file and not (out / "addons/terrain_3d").exists():      # standalone project: ship the addon so it opens/runs
+                copy_addon(t3d_addon, out, all_platforms=True)
+        for cy in range(ncy if s.terrain == "mesh" else 0):
             for cx in range(ncx):
                 name = f"Chunk_{cx:02d}_{cy:02d}"
                 nodes = []
@@ -549,6 +602,16 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
             "coordinates": "Godot axes: X east, Y up, Z south. World origin = north-west corner. Meters.",
             "chunks": {"cells": cells, "size_m": chunk_m, "grid": [ncx, ncy], "lod_steps": steps, "lod_switch_distance_m": ranges,
                        "collision_step": s.collision_step, "naming": "Terrain/Chunk_<x>_<y>.glb (Terrain_LOD0..N + Collision-colonly)"},
+            "terrain": ({"mode": "mesh"} if s.terrain == "mesh" else {
+                "mode": "terrain3d", "addon_version": t3d_info.get("addon_version"), "region_size": t3d_info.get("region_size"),
+                "vertex_spacing": hf.cell_size, "regions": t3d_info.get("region_files"), "data_directory": "Terrain3D/data",
+                "texture_ids": s.terrain3d_texture_ids or {m: i for i, m in enumerate(MATERIALS)},
+                "material": ("Terrain3D/material.tres" if not s.terrain3d_material or s.terrain3d_material.endswith(".tscn") else s.terrain3d_material),
+                "material_source": s.terrain3d_material or "generated", "assets": s.terrain3d_assets or "Terrain3D/assets.tres",
+                "collision": s.terrain3d_collision, "collision_layer": s.terrain3d_collision_layer,
+                "note": "Terrain3D control map: base = dominant material, overlay = 2nd, blend = overlay share; navigation bit set outside water. "
+                        "To use your game's look, point the Terrain3D node's material/assets to yours (or export with terrain3d_material/assets "
+                        "and terrain3d_texture_ids)."}),
             "textures": tex, "materials": {"surface_order": MATERIALS, "splat0": "grass,dirt,rock (RGB)", "splat1": "snow,sand,mud (RGB)", "splat2": "wet_rock,gravel (RG)"},
             "features": counts, "grass": grass_info or "disabled", "vegetation": {"species": veg_summary, "total_instances": total_inst,
                                                "representation": "MultiMeshInstance3D per species per chunk (placeholder meshes)"},
@@ -562,7 +625,8 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
             (out / "project.godot").write_text(
                 f'; Engine configuration file.\nconfig_version=5\n\n[application]\n\nconfig/name="{session.name}"\n'
                 f'run/main_scene="res://Preview.tscn"\nconfig/features=PackedStringArray("4.7")\n\n[rendering]\n\n'
-                f'renderer/rendering_method="forward_plus"\n')
+                f'renderer/rendering_method="forward_plus"\n'
+                + ('\n[editor_plugins]\n\nenabled=PackedStringArray("res://addons/terrain_3d/plugin.cfg")\n' if s.terrain == "terrain3d" else ""))
         # ---- navigation: real Recast bake in Godot (reliable for narrow trails), when requested/available
         if s.navigation in ("auto", "bake"):
             gb = _find_godot(s.godot_binary)
@@ -571,7 +635,7 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
                     raise ValueError("navigation='bake' needs the Godot binary (set godot_binary or $AWS_GODOT)")
                 nav_info = {"mode": "none", "note": "Godot binary not found: navigation not baked. Re-export with navigation='bake' or bake in the editor."}
             else:
-                nav_info = bake_navigation(out, gb, size, s.nav_max_slope_deg, cell=s.nav_bake_cell)
+                nav_info = bake_navigation(out, gb, size, s.nav_max_slope_deg, cell=s.nav_bake_cell, addon=t3d_addon)
                 if nav_info.get("ok"):
                     T.ext_res("navmesh", "NavigationMesh", "Navigation/navmesh.res")
                     T.node("Navigation", "NavigationRegion3D", ".", ['navigation_mesh = ExtResource("navmesh")'])
@@ -584,7 +648,7 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
         report = validate_export(out, s)
         manifest["validation"] = report
         (out / "WorldData/manifest.json").write_text(json.dumps(manifest, indent=2))
-        return {"ok": True, "path": str(out), "chunks": ncx * ncy, "lod_steps": steps, "files": len(files),
+        return {"ok": True, "path": str(out), "terrain": s.terrain, "chunks": ncx * ncy if s.terrain == "mesh" else 0, "lod_steps": steps, "files": len(files),
                 "features": counts, "vegetation_instances": total_inst, "validation": report}
 
 
@@ -602,7 +666,14 @@ def validate_export(out_dir: str | Path, settings: ExportSettings | None = None)
         return {"ok": False, "findings": [{"severity": "error", "code": "no_manifest", "message": "WorldData/manifest.json missing"}]}
     mf = json.loads(mf_path.read_text())
     ncx, ncy = mf["chunks"]["grid"]
-    for cy in range(ncy):
+    t3d = mf.get("terrain", {}).get("mode") == "terrain3d"
+    if t3d:
+        if not list((out / "Terrain3D/data").glob("terrain3d*.res")):
+            add("error", "missing_terrain3d_regions", "Terrain3D/data has no region files")
+        for f in (mf["terrain"].get("material"), mf["terrain"].get("assets")):
+            if f and not f.startswith("res://") and not (out / f).exists():
+                add("error", "missing_terrain3d_resource", f"{f} missing")
+    for cy in range(ncy if not t3d else 0):
         for cx in range(ncx):
             p = out / f"Terrain/Chunk_{cx:02d}_{cy:02d}.glb"
             if not p.exists():
@@ -617,7 +688,7 @@ def validate_export(out_dir: str | Path, settings: ExportSettings | None = None)
             add("error", "missing_texture", f"Textures/{t} missing")
     # broken references in tscn/tres
     prefix = mf.get("res_prefix", "res://")
-    for f in [out / "World.tscn", *(out / "Materials").glob("*.tres")]:
+    for f in [out / "World.tscn", *(out / "Materials").glob("*.tres"), *(out / "Terrain3D").glob("*.tres")]:
         for m in re.finditer(r'path="([^"]+)"', f.read_text()):
             rel = m.group(1)
             if rel.startswith(prefix) and not (out / rel[len(prefix):]).exists():
@@ -640,7 +711,7 @@ def validate_export(out_dir: str | Path, settings: ExportSettings | None = None)
         add("warning", "too_many_instances", f"{mf['vegetation']['total_instances']} instances (> {s.max_instances}); consider lower density")
     if mf["chunks"]["grid"][0] * mf["chunks"]["grid"][1] > 1024:
         add("warning", "many_chunks", "More than 1024 chunks in one scene; consider streaming")
-    if not mf["chunks"]["lod_steps"][1:]:
+    if not t3d and not mf["chunks"]["lod_steps"][1:]:
         add("warning", "no_lods", "Only one LOD level was generated")
     return {"ok": not any(f["severity"] == "error" for f in findings), "findings": findings}
 
@@ -709,6 +780,15 @@ func _initialize():
 				res["nav_end_gap_m"] = path[path.size() - 1].distance_to(cgoal) if path.size() > 0 else -1.0
 		if n is CollisionShape3D and n.shape != null: shapes_ok += 1
 		for ch in n.get_children(): stack.append(ch)
+	for t in root.find_children("*", "Terrain3D", true, false):
+		res["terrain3d"] = {"regions": t.data.get_region_count(), "region_size": t.get_region_size(), "vertex_spacing": t.vertex_spacing,
+			"collision_mode": t.collision_mode, "texture_arrays_ready": t.assets != null and t.assets.get_albedo_array_rid().is_valid()}   # at runtime Terrain3D frees the list after building the arrays
+	var ps = root.find_child("PlayerStart", true, false)
+	if ps != null:                                  # is there solid ground (collision) under the spawn point?
+		var q = PhysicsRayQueryParameters3D.create(ps.global_position + Vector3(0, 30, 0), ps.global_position - Vector3(0, 60, 0))
+		var hit = get_root().world_3d.direct_space_state.intersect_ray(q)
+		res["ground_under_start"] = hit.size() > 0
+		if hit.size() > 0: res["ground_gap_m"] = ps.global_position.y - hit["position"].y
 	res["meshes_without_mesh"] = meshes_without_mesh
 	res["material_overrides"] = override_ok
 	res["lod_range_nodes"] = lod_ranges_ok
@@ -741,12 +821,18 @@ func _initialize():
 """
 
 
-def screenshot_with_godot(out_dir: str | Path, png_path: str | Path, godot: str = "/Applications/Godot.app/Contents/MacOS/Godot",
+def screenshot_with_godot(out_dir: str | Path, png_path: str | Path, godot: str | None = None,
                           size: str = "960x600", timeout: int = 300, camera: tuple | None = None,
                           project_dir: str | Path | None = None, scene: str | None = None) -> dict:
     """Render Preview.tscn (or `scene`) in a real windowed Godot and save a PNG: checks shaders/materials/LOD visually.
     camera = (x, y, z, tx, ty, tz) overrides the preview camera."""
     out = Path(out_dir)
+    godot = find_godot(godot)
+    if not godot:
+        return {"ok": False, "error": "Godot not found (set $AWS_GODOT)"}
+    if project_dir is None and _prefix_of(out) != "res://" and scene is None:   # embedded package: shoot a temp copy, never the host project
+        with _temp_project(out) as tmp:
+            return screenshot_with_godot(tmp, png_path, godot, size, timeout, camera)
     proj = _project_root(out, project_dir); prefix = _prefix_of(out)
     scene = scene or (f"{prefix}Preview.tscn" if (out / "Preview.tscn").exists() else f"{prefix}World.tscn")
     subprocess.run([godot, "--headless", "--path", str(proj), "--import"], capture_output=True, text=True, timeout=timeout)  # import assets first
@@ -778,6 +864,10 @@ func _initialize():
 	nm.geometry_source_group_name = "aws_nav_src"
 	var src = NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(nm, src, root)
+	var ws = OS.get_environment("AWS_NAV_WORLD").split(",")
+	for t in root.find_children("*", "Terrain3D", true, false):          # Terrain3D is not a MeshInstance3D: ask it for its faces
+		var box = AABB(Vector3(-2, -10000, -2), Vector3(float(ws[0]) + 4, 20000, float(ws[1]) + 4))
+		src.add_faces(t.generate_nav_mesh_source_geometry(box, true), Transform3D.IDENTITY)
 	NavigationServer3D.bake_from_source_geometry_data(nm, src)
 	var err = ResourceSaver.save(nm, OS.get_environment("AWS_NAV_OUT"))
 	print("NAV_JSON ", JSON.stringify({"polygons": nm.get_polygon_count(), "vertices": nm.get_vertices().size(), "save_error": err}))
@@ -785,16 +875,30 @@ func _initialize():
 """
 
 
+def _uses_terrain3d(out: Path) -> bool:
+    try:
+        return json.loads((out / "WorldData/manifest.json").read_text()).get("terrain", {}).get("mode") == "terrain3d"
+    except (OSError, ValueError, AttributeError):
+        return (out / "Terrain3D/data").exists()
+
+
 @contextlib.contextmanager
-def _temp_project(out: Path):
+def _temp_project(out: Path, addon: Path | None = None):
     """A throw-away standalone copy of the package (prefix res://, own project.godot). Lets us run Godot (import, bake, verify) without ever
-    touching the project the package is installed in."""
+    touching the project the package is installed in. Terrain3D packages get a copy of the addon (found next to the package if not given)."""
     td = tempfile.mkdtemp(prefix="aws_pkg_")
     tmp = Path(td) / "pkg"
     try:
         shutil.copytree(out, tmp, ignore=shutil.ignore_patterns(".godot", "*.import", "*.uid", "project.godot"))
         if _prefix_of(out) != "res://":
             relocate_package(tmp, "res://")
+        from exporters.godot.terrain3d import copy_external_deps, host_project_root
+        copy_external_deps(out, tmp, host_project_root(out), _prefix_of(out))     # e.g. the game's own terrain shader + textures
+        if _uses_terrain3d(out) and not (tmp / "addons/terrain_3d").exists():
+            from exporters.godot.terrain3d import copy_addon, find_terrain3d_addon
+            addon = addon or find_terrain3d_addon(out)
+            if addon is not None:
+                copy_addon(addon, tmp)
         (tmp / "project.godot").write_text('config_version=5\n[application]\nconfig/name="aws_temp"\n')
         yield tmp
     finally:
@@ -802,28 +906,24 @@ def _temp_project(out: Path):
 
 
 def _find_godot(explicit: str | None = None) -> str | None:
-    if explicit:                                       # an explicit path is taken literally: no silent fallback to another install
-        return explicit if Path(explicit).exists() else None
-    for c in (explicit, os.environ.get("AWS_GODOT"), "/Applications/Godot.app/Contents/MacOS/Godot", shutil.which("godot"), shutil.which("godot4")):
-        if c and Path(c).exists():
-            return str(c)
-    return None
+    return find_godot(explicit)
 
 
-def bake_navigation(out: Path, godot: str, world_size: float, max_slope_deg: float = 40.0, timeout: int = 1800, cell: float | None = None) -> dict:
+def bake_navigation(out: Path, godot: str, world_size: float, max_slope_deg: float = 40.0, timeout: int = 1800, cell: float | None = None,
+                    addon: Path | None = None) -> dict:
     """Bake a NavigationMesh with Godot's Recast baker from the LOD0 terrain meshes (group 'aws_nav_src'); saves Navigation/navmesh.res.
     Runs in a temporary copy of the package, so the host project is never opened or modified."""
     import time as _t
     (out / "Navigation").mkdir(exist_ok=True)
     cell = float(cell) if cell else float(np.clip(world_size / 1500.0, 0.5, 2.0))   # bigger worlds: coarser voxels (bounded bake time)
     t0 = _t.time()
-    with _temp_project(out) as tmp:
+    with _temp_project(out, addon) as tmp:
         subprocess.run([godot, "--headless", "--path", str(tmp), "--import"], capture_output=True, text=True, timeout=timeout)
         (tmp / "Navigation").mkdir(exist_ok=True)
         script = tmp / "WorldData/_nav.gd"; script.write_text(NAV_BAKE_GD)
         run = subprocess.run([godot, "--headless", "--path", str(tmp), "--script", "res://WorldData/_nav.gd"], capture_output=True, text=True, timeout=timeout,
                              env={**os.environ, "AWS_SCENE": "res://World.tscn", "AWS_NAV_OUT": "res://Navigation/navmesh.res",
-                                  "AWS_NAV_CELL": f"{cell}", "AWS_NAV_SLOPE": f"{max_slope_deg}"})
+                                  "AWS_NAV_CELL": f"{cell}", "AWS_NAV_SLOPE": f"{max_slope_deg}", "AWS_NAV_WORLD": f"{world_size},{world_size}"})
         line = next((l for l in run.stdout.splitlines() if l.startswith("NAV_JSON ")), None)
         if line is None or not (tmp / "Navigation/navmesh.res").exists():
             return {"ok": False, "mode": "bake", "error": "navigation bake produced no mesh", "tail": (run.stdout + run.stderr)[-600:]}
@@ -847,13 +947,14 @@ def _project_root(out: Path, project_dir: str | Path | None) -> Path:
     return out
 
 
-def verify_with_godot(out_dir: str | Path, godot: str = "/Applications/Godot.app/Contents/MacOS/Godot", timeout: int = 600,
+def verify_with_godot(out_dir: str | Path, godot: str | None = None, timeout: int = 600,
                       project_dir: str | Path | None = None) -> dict:
     """Import the package with the real Godot (headless) and inspect the instantiated World.tscn.
     Works for standalone packages and for packages embedded in an existing project (project_dir, or auto-detected)."""
     out = Path(out_dir)
-    if not Path(godot).exists():
-        return {"ok": False, "error": f"Godot not found at {godot}"}
+    godot = find_godot(godot)
+    if not godot:
+        return {"ok": False, "error": "Godot not found (set $AWS_GODOT)"}
     if project_dir is None and _prefix_of(out) != "res://":       # embedded package: verify a temporary copy, never the host project
         with _temp_project(out) as tmp:
             return verify_with_godot(tmp, godot, timeout)
@@ -869,7 +970,8 @@ def verify_with_godot(out_dir: str | Path, godot: str = "/Applications/Godot.app
     finally:
         script.unlink(missing_ok=True)
     line = next((l for l in run.stdout.splitlines() if l.startswith("VERIFY_JSON ")), None)
-    benign = ("leaked at exit", "Plugin is not attached to debugger", "still in use at exit", "Pages in use exist at exit")   # headless shutdown noise
+    benign = ("leaked at exit", "Plugin is not attached to debugger", "still in use at exit", "Pages in use exist at exit",   # headless shutdown noise
+              "Cannot find clipmap target or active camera")                                                                 # Terrain3D without a camera (headless)
     errs = [l for l in (imp.stdout + imp.stderr + run.stdout + run.stderr).splitlines()
             if ("ERROR" in l or "SCRIPT ERROR" in l) and not any(b in l for b in benign)]
     if line is None:
@@ -877,6 +979,11 @@ def verify_with_godot(out_dir: str | Path, godot: str = "/Applications/Godot.app
     res = json.loads(line[len("VERIFY_JSON "):])
     res["godot_errors"] = errs[:20]
     res["ok"] = not res.get("errors") and not errs and res.get("meshes_without_mesh", 1) == 0
+    if _uses_terrain3d(out):
+        t3 = res.get("terrain3d", {})
+        res["ok"] = res["ok"] and t3.get("regions", 0) > 0 and bool(t3.get("texture_arrays_ready"))
+    if "ground_under_start" in res:
+        res["ok"] = res["ok"] and res["ground_under_start"]
     if "nav_path_points" in res:                      # can a walker get from PlayerStart to (the walkable point nearest) the summit?
         res["nav_reaches_summit"] = bool(res["nav_path_points"] > 1 and 0 <= res["nav_end_gap_m"] < 6.0 and res["nav_goal_gap_m"] < 15.0)
     return res
@@ -895,6 +1002,8 @@ def relocate_package(package_dir: str | Path, new_prefix: str) -> dict:
     mf = json.loads(mf_path.read_text()); old = mf.get("res_prefix", "res://")
     changed = 0
     for f in list(out.rglob("*")):
+        if "addons" in f.relative_to(out).parts:          # a bundled addon (Terrain3D) keeps its own res://addons/ paths
+            continue
         if f.suffix in (".tscn", ".tres", ".gdshader", ".gdshaderinc") and f.is_file():
             t = f.read_text(); n = t.replace(f'"{old}', f'"{new_prefix}') if old != "res://" else re.sub(r'"res://(?!/)', f'"{new_prefix}', t)
             if n != t:

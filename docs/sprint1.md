@@ -1,6 +1,6 @@
 # Sprint 1: estado y decisiones
 
-Ejecutar: `. .venv/bin/activate && python app/main.py` · Tests: `pytest` · Benchmark: `python scripts/benchmark.py`
+Ejecutar: `. .venv/bin/activate && python app/main.py` (Windows: `.venv\Scripts\activate`) · Tests: `pytest` · Benchmark: `python scripts/benchmark.py`
 
 ## Decisiones (plan §25)
 - **Viewport:** `QOpenGLWidget` (PySide6) + PyOpenGL, core profile 3.3. Sin dependencias extra de visor.
@@ -135,3 +135,30 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   `cast_shadow = 0` y 3 parches con distinto azar para que no se note el patrón. ~5–9 k matas por chunk según `grass_spacing`.
 - Límites: sin flores, sin interacción con el jugador (no se aplasta), tope de distancia 68 m (ajustable), coste de vértices en pantalla alto con densidades muy altas;
   el estilo (colores) sigue al de mi shader de terreno, no al de tu `terrain3d_toon`.
+
+
+## Exportar a Terrain3D (fase 9) y paso a Windows
+- `exporters/godot/terrain3d.py` + `ExportSettings(terrain="terrain3d")`. Python prepara altura float32 (metros), mapa de control uint32
+  (base `<<27`, overlay `<<22`, mezcla `<<14`, navegación `<<1`; mismo formato que `DECODE_*` en los shaders del addon) y 8 texturas RGBA8 tileables
+  (albedo + altura en A; normal OpenGL + rugosidad en A). Godot, con el addon real copiado a un proyecto temporal, hace `import_images`,
+  `save_directory`, guarda las texturas como `ImageTexture` `.res` con mipmaps (exactas, sin paso de importación) y `assets.tres`/`material.tres`
+  con `ResourceSaver` (el formato de las regiones depende de la versión del addon: no se escribe desde Python).
+- Tamaño de región: el que menos relleno deja con ≤ 16 regiones por eje desde el origen (el mapa de regiones es 32×32, -16..15; el mundo empieza en 0,0).
+  `change_region_size` hay que llamarlo con el nodo ya en el árbol (asignar `region_size` antes no surte efecto).
+- Comprobación al hornear: alturas leídas de vuelta con `data.get_height` en vértices exactos (error ~1e-14 m). Entre vértices Terrain3D interpola
+  por triángulo y `Heightfield.sample` bilineal (difieren hasta ~0,3 m con ruido): no comparar ahí.
+- En juego (no editor) Terrain3D construye los arrays de texturas y **vacía `texture_list`** (`free_editor_textures`): para verificar mira
+  `assets.get_albedo_array_rid().is_valid()`, no el número de texturas.
+- Sin cámara (headless) Terrain3D avisa `Cannot find clipmap target or active camera`: ruido benigno en verificación.
+- Navegación: `generate_nav_mesh_source_geometry(aabb, true)` (respeta el bit de navegación pintado) se añade a la geometría fuente del horneado.
+- Verificación nueva (ambos modos): rayo bajo `PlayerStart` → hay colisión real (`ground_under_start`, `ground_gap_m` ≈ 1 m).
+- Las copias temporales (`_temp_project`) llevan el addon si el paquete es Terrain3D; `relocate_package` no toca `addons/`. Exportación autónoma:
+  se copia el addon (todas las plataformas) y se activa en `project.godot`.
+- Windows: `exporters/godot/godot_bin.py::find_godot` (también Documents/Downloads/Desktop, prefiere `_console.exe`), `.mcp.json` con
+  `.venv/Scripts/python.exe`. `export_to_godot(verify=True)` ya no abre el proyecto receptor: verifica en copia temporal.
+- Material del juego: `terrain3d_material` puede ser una escena (`res://tallow_hills.tscn`); `extract_material` copia su `Terrain3DMaterial`
+  con las ext/sub resources que usa (sin `uid`, rutas del proyecto intactas) y fuerza `world_background = 0` (si no, el plano infinito del juego rodea el mundo).
+  `copy_external_deps` lleva a las copias temporales los archivos del proyecto receptor que el paquete referencia (shader, texturas, `#include`).
+  Probado en `wicktale` (el juego del usuario en Windows): senderos → id 1 (`terrain3d_texture_ids`), verificación y capturas sin abrir el proyecto.
+- Límites: las texturas son procedurales y planas de estilo (no el toon de tu juego salvo que pases tu material/assets); el sendero tallado no se marca
+  como textura propia (sale como `dirt`); probado solo con Terrain3D 1.1.0 + Godot 4.7.2 en Windows.

@@ -13,11 +13,14 @@ Se puede usar de cuatro formas, todas sobre el mismo núcleo (`core/world/sessio
 
 ## Instalación
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate          # Windows: python -m venv .venv  y  .venv\Scripts\activate
 pip install numpy scipy pillow PySide6 PyOpenGL fastapi uvicorn mcp pytest httpx
-pytest -q          # 60+ pruebas, incluida una importación real en Godot si está instalado
+pytest -q          # 80+ pruebas, incluidas importaciones reales en Godot (y Terrain3D) si están instalados
 ```
-Godot 4.7.x (editor) solo hace falta para verificar exportaciones y para re-hornear la biblioteca de props (`python -m exporters.godot.assets_bake`).
+Godot 4.7.x (editor) hace falta para verificar exportaciones, hornear navegación/Terrain3D y re-hornear la biblioteca de props
+(`python -m exporters.godot.assets_bake`). Se busca en `$AWS_GODOT`, la app de macOS, `~/Documents|Downloads|Desktop/Godot_v4*_win64*.exe`
+(en Windows se prefiere la variante `_console.exe`) y `godot`/`godot4` en el PATH. `.mcp.json` apunta a `.venv/Scripts/python.exe` (Windows;
+en macOS/Linux cámbialo a `.venv/bin/python`).
 
 ## Llevar un mundo a cualquier proyecto de Godot
 El paquete exportado (carpeta) es independiente del proyecto que lo recibe:
@@ -26,9 +29,17 @@ El paquete exportado (carpeta) es independiente del proyecto que lo recibe:
 - `Preview.tscn` es un extra para ver el mundo al instante (sol, cielo, cámara). `Environment/stylized_environment.tres` es opcional.
 - Rutas `res://` ajustables a cualquier carpeta: `--godot-project <proyecto> --subfolder addons/mi_mundo` o, después, `awstudio.py relocate <carpeta> --prefix res://otra/ruta/`.
 - `--profile compatible` también funciona con el renderer Compatibility (verificado); `full` (por defecto) usa agua con profundidad y brillo (Forward+/Mobile).
-- **Navegación**: `--navigation auto` (por defecto) hornea un `NavigationMesh` con el horneador de Godot (Recast) si encuentra el binario (`$AWS_GODOT`, la app de macOS o `godot` en PATH); `python` genera una malla gruesa propia (los senderos estrechos pueden desconectarse); `none` la omite.
+- **Navegación**: `--navigation auto` (por defecto) hornea un `NavigationMesh` con el horneador de Godot (Recast) si encuentra el binario (ver «Instalación»); `python` genera una malla gruesa propia (los senderos estrechos pueden desconectarse); `none` la omite.
   Verificado con el servidor de navegación real de Godot: del `PlayerStart` a la cima (`Markers/Summit`) hay ruta a pie en los mundos generados.
 - **Hierba alta**: matas colocadas por la GPU (un parche compartido por chunk; el shader las apoya en el terreno con `Textures/height_rg.tres` y los splat maps, las oculta en agua, senderos y roca, y las encoge con la distancia). No se guarda nada por mata. `--no-grass` la desactiva.
+- **Terrain3D** (`--terrain terrain3d`, herramienta `export_to_godot(terrain="terrain3d")`): en vez de chunks GLB, `World.tscn` lleva un nodo
+  `Terrain3D` con regiones horneadas (`Terrain3D/data/terrain3d_*.res`), 8 texturas procedurales (`Terrain3D/textures`, `assets.tres`) y
+  `material.tres` (sin fondo infinito). Así el terreno usa el LOD, la colisión y las herramientas de pintar/esculpir de Terrain3D. Requiere el addon:
+  se toma de `<proyecto>/addons/terrain_3d` (o `--terrain3d-addon`, `$AWS_TERRAIN3D_ADDON`); las regiones las escribe Godot con ese mismo addon en una
+  copia temporal, así que el formato siempre coincide con tu versión (probado: Terrain3D 1.1.0). Mapa de control: material dominante como base, el segundo
+  como overlay, mezcla = proporción; bit de navegación fuera del agua. Para usar el aspecto de tu juego: `terrain3d_material` / `terrain3d_assets`
+  (rutas `res://` de tu proyecto) y `terrain3d_texture_ids` (`{"grass": 0, "rock": 1, …}`: nuestros 8 materiales → tus ranuras). Agua, cascadas,
+  vegetación, hierba, marcadores y navegación funcionan igual (la navegación se hornea desde la geometría de Terrain3D).
 - Salidas portables para otros flujos: `Textures/heightmap16.png` y `heightmap.r16` (importables por addons de terreno), `splat0-2.png`, `WorldData/manifest.json`.
 - Se instancia como cualquier escena: `var w = load("res://addons/mi_mundo/World.tscn").instantiate(); add_child(w)`.
 

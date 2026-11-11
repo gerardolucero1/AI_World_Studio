@@ -14,7 +14,7 @@ from exporters.godot.glb import write_glb
 from exporters.godot.procedural_assets import PROTOTYPES
 
 LIB = Path(__file__).parent / "library"
-GODOT = "/Applications/Godot.app/Contents/MacOS/Godot"
+from exporters.godot.godot_bin import GODOT
 BAKE_GD = """extends SceneTree
 func _initialize():
 	var dir = DirAccess.open("res://src")
@@ -38,7 +38,7 @@ func _initialize():
 """
 
 
-def bake(godot: str = GODOT) -> list[str]:
+def bake(godot: str | None = GODOT) -> list[str]:
     with tempfile.TemporaryDirectory(prefix="aws_bake_") as td:
         t = Path(td)
         (t / "src").mkdir(); (t / "out").mkdir()
