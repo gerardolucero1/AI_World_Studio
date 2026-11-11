@@ -43,3 +43,14 @@ def test_style_snow_line_roundtrip(tmp_path):
     S.create_world("t", 256, 129); S.set_world_style(snow_line=123.0, rock_slope_min=30, rock_slope_max=50)
     S.save_world(str(tmp_path / "w.awp")); S.create_world("o", 256, 129)
     S.load_world(str(tmp_path / "w.awp")); assert S.SESSION.hf.style["snow_line"] == 123.0 and tuple(S.SESSION.hf.style["rock_slope"]) == (30, 50)
+
+
+@pytest.mark.parametrize("seed", [1, 3, 4, 7])
+def test_highland_lake_succeeds_for_several_seeds(seed):
+    """Seed 4 used to fail twice: the river aimed at the lake centre (the island sits there; a river can't climb onto it) and the tier trail
+    found no route at the first try. Now the river aims at the near shore and both retry along the rim."""
+    from core.world import presets
+    r = presets.generate_landscape("highland_lake", 768, seed)
+    assert r["ok"], [s for s in r["steps"] if not s.get("ok")]
+    river = next(s for s in r["steps"] if s["step"] == "river")
+    assert river["waterfalls"] >= 1 and r["traversability"]["summit_reachable"]

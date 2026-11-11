@@ -18,7 +18,7 @@ def qapp():
 @pytest.fixture
 def window(qapp):
     from app.main import MainWindow
-    w = MainWindow()
+    w = MainWindow(bridge=False)
     yield w
     w.close()
 
@@ -166,3 +166,36 @@ def test_history_panel_edits_and_disables_operations(window):
     assert ed.list.item(1).text().endswith("(desactivada)")
     window.view.undo()
     assert window.session.op_log[1].enabled and len(window.session.op_log[1].result["_instances"]) > 0
+
+
+def test_agent_calls_through_the_bridge_change_the_editor_world_and_show_in_the_panel(qapp, tmp_path, monkeypatch):
+    """An MCP-style client finds the open editor (lock file), its tool calls run on the editor's world, and the Agent panel lists them."""
+    from app.main import MainWindow
+    from core.world import bridge
+    monkeypatch.setenv("AWS_EDITOR_LOCK", str(tmp_path / "editor.json"))
+    w = MainWindow(bridge=True)
+    try:
+        info = bridge.editor_endpoint()
+        assert info and info["port"] == w.bridge.port
+        r = bridge.call_editor(info, "create_world", {"name": "agent", "size_m": 256, "resolution": 129})
+        assert r["ok"] and w.session.hf.size[0] == 256                     # the editor's own session changed
+        r = bridge.call_editor(info, "create_mountain", {"x": 128, "y": 128, "radius": 50, "height": 30})
+        assert r["ok"] and w.session.op_log[-1].kind == "mountain"
+        assert not bridge.call_editor(info, "create_mountain", {"x": 1})["ok"]          # bad arguments are reported, not fatal
+        assert not bridge.call_editor(info, "no_such_tool", {})["ok"]
+        changed = []
+        w.agent.world_changed.connect(lambda: changed.append(1))
+        w.agent.poll()
+        texts = [w.agent.list.item(i).text() for i in range(w.agent.list.count())]
+        assert any("Crear mundo" in t and "✓" in t for t in texts) and any("Montaña" in t for t in texts)
+        assert changed and w.hist.count() == 1                              # world redrawn, history panel refreshed
+        bad = {"x": "1", "token": "nope"}
+        import urllib.request, urllib.error, json as _json
+        req = urllib.request.Request(f"http://127.0.0.1:{info['port']}/call/get_world_info", data=b"{}", headers={"X-AWS-Token": "wrong"}, method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=5); assert False, "accepted a bad token"
+        except urllib.error.HTTPError as e:
+            assert e.code == 403
+    finally:
+        w.close()
+    assert bridge.editor_endpoint() is None and not (tmp_path / "editor.json").exists()

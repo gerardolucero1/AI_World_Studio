@@ -16,12 +16,14 @@ terrain3d_texture_ids={"dirt": 1, resto: 0}, water_script="res://scripts/world/w
 Se trabaja en Windows: Godot 4.7.2 en `~/Downloads/Godot_v4.7.2-stable_win64.exe/…_console.exe` (lo encuentra `godot_bin.find_godot`).
 
 ## Cómo se usa
-- Agente: herramientas MCP `ai-world-studio` (`.mcp.json`; si no aparecen, reiniciar la sesión) o CLI: `python awstudio.py call <tool> '<json>'`.
+- Agente: herramientas MCP `ai-world-studio` (`.mcp.json`; si no aparecen, reiniciar la sesión). **Si el editor está abierto** (`awstudio.py ui`),
+  el servidor MCP reenvía cada herramienta al editor (`core/world/bridge.py`, `~/.ai_world_studio/editor.json` con puerto y token, solo 127.0.0.1):
+  agente y usuario trabajan sobre el MISMO mundo y el panel «Agente» muestra cada llamada; `AWS_EDITOR=off` lo desactiva o CLI: `python awstudio.py call <tool> '<json>'`.
   `python awstudio.py tools` lista las 56 herramientas; `docs/TOOLS.md` las documenta (`python awstudio.py docs` lo regenera).
 - Rápido: `python awstudio.py generate highland_lake --size 1024 --seed 3 --save X.awp --godot-project <proyecto> --subfolder generated_worlds/nombre`.
 - UI: `python awstudio.py ui` (Archivo → Generar paisaje de ejemplo Ctrl+G; Exportar a Godot Ctrl+E). REST: `awstudio.py api`.
 - Tests: `pytest -q` (≈3 min; incluye importaciones, navegación y Terrain3D en Godot real si `find_godot` lo encuentra / `$AWS_GODOT`, y el addon
-  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 102 en verde (≈2,8 min; incluye el editor PySide6 sin pantalla). Venv: `.venv/Scripts/python.exe`.
+  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 107 en verde (≈2,8 min; incluye el editor PySide6 sin pantalla y el puente editor↔agente). Venv: `.venv/Scripts/python.exe`.
 
 ## Mapa del código
 `core/world/session.py` (WorldSession: operaciones, undo, checkpoints) y `service.py` (las 56 herramientas, única fuente para UI/CLI/REST/MCP; el editor comparte la misma `SESSION`) ·
@@ -64,6 +66,9 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
   Tras cambiar el terreno, `session.reground()` reasienta vegetación y objetos (antes flotaban hasta reabrir).
 - `water_mask` rasteriza los lagos con PIL dentro de su caja (antes `_poly_sdf` sobre todo el mapa: 10 s en 1536 m; ahora 0,16 s). Si algo es lento,
   perfilar antes de cachear: suele ser un cálculo por celda sobre todo el mapa.
+- `highland_lake`: el río apunta a la orilla cercana del lago (en el centro está la isla y un río no sube a ella) y río y sendero de terrazas
+  reintentan por el borde; 20/20 semillas probadas salen bien. Los clientes MCP lanzan el servidor con un entorno mínimo: variables propias
+  (p. ej. `AWS_EDITOR_LOCK`) hay que pasarlas en `env` explícitamente.
 - **Godot headless NO compila shaders ni dibuja**: para ver el resultado usa `screenshot_with_godot` (ventana real) o el editor vía MCP. Verifica siempre con capturas.
 - No guardar pesos en el canal alfa de PNG (Godot "arregla" el RGB de píxeles transparentes → rampas negras): splat maps en RGB opaco (3 texturas).
 - Texturas usadas en 3D pueden recomprimirse con pérdida: datos exactos (alturas) van en `.tres` ImageTexture (RG8 en base64), no en PNG.
@@ -83,7 +88,8 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
 3. Formaciones de roca (arcos, pilares, salientes); acantilados como geometría real en las terrazas. 4. Más presets (cañón, costa, pradera abierta).
 5. Editar features creados (`modify_*`), dependencias y aviso de "desactualizado"; reordenar/desactivar operaciones. 6. UI: ~~diálogo de exportación~~, ~~colocar objetos~~, ~~editar curvas (ríos, senderos, lagos)~~ (hechos). Faltan: editar otras operaciones
    desde la UI ~~(hecho: panel Historial con parámetros y activar/desactivar)~~, ~~overlays~~ (altura, pendiente, agua, transitable). Faltan:
-   panel de actividad del agente (el MCP corre en otro proceso: habría que servir la sesión del editor), pinceles nuevos, biblioteca de assets.
+   ~~panel de actividad del agente~~ (hecho: puente editor↔MCP). Faltan: pinceles nuevos, biblioteca de assets, modo «asistido» (el agente
+   propone y el usuario aprueba).
 7. Cascadas con colisión/sonido/salpicaduras; ríos que se unen. 8. Validador completo, AWP completo, procedencia de assets, probar otras versiones de Godot (solo 4.7.2 probado).
 
 ## Desarrollo

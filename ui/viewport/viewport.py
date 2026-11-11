@@ -169,6 +169,18 @@ class TerrainViewport(QOpenGLWidget):
         self._pending = {(cx, cy) for cx in range(ncx) for cy in range(ncy)}
         self._ops_changed()
         self.frame_camera()
+        self._last_size = tuple(self.hf.size)
+        self.changed.emit()
+
+    def refresh_world(self) -> None:
+        """Someone else (an agent through the bridge) changed the world: re-upload everything; keep the camera unless the size changed."""
+        size = tuple(self.hf.size)
+        ncx, ncy = chunk_grid(self.hf)
+        self._pending = {(cx, cy) for cx in range(ncx) for cy in range(ncy)}
+        self._ops_changed()
+        if getattr(self, "_last_size", None) != size:
+            self.frame_camera()
+        self._last_size = size
         self.changed.emit()
 
     def frame_camera(self) -> None:

@@ -2,6 +2,7 @@
 Run: python -m mcp_server.server   (or add to an MCP client config)."""
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -21,8 +22,28 @@ import os
 if os.environ.get("AWS_PROJECT"):                       # optional: start with a saved world loaded
     service.load_world(os.environ["AWS_PROJECT"])
 
+import functools
+import typing
+
+from core.world.bridge import call_editor, editor_endpoint
+
+
+def _forwarding(f):
+    """Same tool, but when the desktop editor is open the call runs THERE (on the world the user sees, shown in its Agent panel);
+    otherwise on this server's own world. Set AWS_EDITOR=off to never forward."""
+    @functools.wraps(f)
+    def tool(**kwargs):
+        info = editor_endpoint()
+        return call_editor(info, f.__name__, kwargs) if info else f(**kwargs)
+    tool.__annotations__ = typing.get_type_hints(f)        # resolved types: the schema must not depend on this module's globals
+    tool.__signature__ = inspect.signature(f).replace(
+        parameters=[pp.replace(annotation=tool.__annotations__.get(pp.name, pp.annotation)) for pp in inspect.signature(f).parameters.values()],
+        return_annotation=tool.__annotations__.get("return", inspect.Signature.empty))
+    return tool
+
+
 for _f in service.TOOLS:
-    mcp.tool()(_f)
+    mcp.tool()(_forwarding(_f))
 
 
 @mcp.tool()

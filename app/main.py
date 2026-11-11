@@ -127,7 +127,7 @@ class LabeledSlider(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, bridge: bool = True):
         super().__init__()
         self.setWindowTitle("AI World Studio")
         self.resize(1440, 860)
@@ -140,6 +140,13 @@ class MainWindow(QMainWindow):
         self.stat = QLabel(); self.statusBar().addPermanentWidget(self.stat)
         self.view.stats.connect(self.stat.setText)
         self.view.curve_edited.connect(self.on_curve_edited)
+        self.bridge = None
+        if bridge:                          # agents (MCP) work on this world while the editor is open
+            from core.world.bridge import BridgeServer
+            try:
+                self.bridge = BridgeServer(); self.bridge.start()
+            except OSError:
+                self.bridge = None
         self.view.placed.connect(self.on_placed)
         self.view.brush_radius_changed.connect(lambda r: self.s_radius.set_value(r))
         self.tool_buttons: dict[str, QPushButton] = {}
@@ -300,7 +307,13 @@ class MainWindow(QMainWindow):
         self.hist = self.ops.list
         d = QDockWidget("Historial"); d.setWidget(self.ops); d.setFeatures(QDockWidget.DockWidgetMovable)
         self.addDockWidget(Qt.RightDockWidgetArea, d)
-        self.tabifyDockWidget(self.props_dock, d); self.props_dock.raise_()
+        self.tabifyDockWidget(self.props_dock, d)
+        from app.agent_panel import AgentPanel
+        self.agent = AgentPanel(self.bridge)
+        self.agent.world_changed.connect(self._agent_changed_world)
+        da = QDockWidget("Agente"); da.setWidget(self.agent); da.setFeatures(QDockWidget.DockWidgetMovable)
+        self.addDockWidget(Qt.RightDockWidgetArea, da); self.tabifyDockWidget(d, da)
+        self.props_dock.raise_()
 
     # ------------------------------------------------------------------ state
     def _sync_scales(self):
@@ -403,6 +416,15 @@ class MainWindow(QMainWindow):
             self.warn.hide()
         what = "desactivada" if enabled is False else ("activada" if enabled else "cambiada")
         self.statusBar().showMessage(f"{OP_ES.get(op.kind, op.kind)} {what}; se rehízo todo lo que depende de ella.", 6000)
+
+    def _agent_changed_world(self):
+        self.view.refresh_world(); self._sync_scales(); self.refresh()
+        self.statusBar().showMessage("El agente cambió el mundo (ver panel «Agente»).", 5000)
+
+    def closeEvent(self, e):
+        if self.bridge:
+            self.bridge.stop()
+        super().closeEvent(e)
 
     def _overlay_changed(self, *_):
         from render.overlays import MODES

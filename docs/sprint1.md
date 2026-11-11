@@ -200,3 +200,9 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   (también `set_operation_enabled`). Una operación desactivada no deja resultado (agua, vegetación, avisos).
 - Capas de análisis (`render/overlays.py`, combo «Capa de análisis»): altura con curvas cada 10 m, pendiente (caminar/cuesta/límite/trepar), agua y
   orillas, transitable a pie desde el inicio. Se recalculan por revisión. Para que fueran interactivas hubo que acelerar `water_mask` (lagos con PIL).
+
+- Puente editor↔agente (`core/world/bridge.py`): el editor sirve su sesión en 127.0.0.1 (puerto efímero, token aleatorio en
+  `~/.ai_world_studio/editor.json`, que se borra al cerrar); el servidor MCP envuelve cada herramienta y la reenvía si hay editor (mismo esquema:
+  firma y tipos resueltos de la función original). Un cerrojo serializa las llamadas. Panel «Agente» (`app/agent_panel.py`): hora, herramienta,
+  argumentos, resultado, ms y avisos; la vista se refresca sola (sin mover la cámara salvo cambio de tamaño). Probado con un cliente MCP real.
+- `highland_lake` robusto: 3/16 semillas fallaban (río apuntando a la isla del centro del lago; sendero de terrazas sin ruta al primer intento).

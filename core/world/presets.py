@@ -23,7 +23,8 @@ def highland_lake(size_m: float = 1536.0, seed: int = 1, trees: bool = True) -> 
     log: list[dict] = []
 
     def step(name, r):
-        log.append({"step": name, "ok": r.get("ok", False), "warnings": [w.get("code") for w in r.get("warnings", [])]})
+        log.append({"step": name, "ok": r.get("ok", False), "warnings": [w.get("code") for w in r.get("warnings", [])],
+                    **({"error": r.get("error")} if not r.get("ok", False) else {})})
         return r
 
     c = size_m * 0.5; cz = size_m * (0.50 + 0.04 * rng.uniform(-1, 1))
@@ -35,12 +36,24 @@ def highland_lake(size_m: float = 1536.0, seed: int = 1, trees: bool = True) -> 
     step("mountains", S.create_border_mountains(width=size_m * 0.22, height=size_m * 0.15, roughness=0.65, seed=seed + 3))
     step("style", S.set_world_style(snow_line=size_m * 0.19))
     lake_c = (c + size_m * 0.015 * rng.uniform(-1, 1), cz + size_m * 0.02)
-    step("lake", S.create_lake(_poly(*lake_c, size_m * 0.085, rng), depth=size_m * 0.0045))
+    lake_poly = _poly(*lake_c, size_m * 0.085, rng)
+    step("lake", S.create_lake(lake_poly, depth=size_m * 0.0045))
     step("island", S.create_mountain(lake_c[0] + size_m * 0.012, lake_c[1], size_m * 0.027, size_m * 0.011, profile=1.1, roughness=0.1, seed=seed))
     # a river that descends the tiers from the north-west rim into the lake: every cliff it crosses becomes a waterfall
-    river = S.create_river_auto([c - size_m * 0.13, cz - size_m * 0.29], list(lake_c), width=max(5.0, size_m * 0.0045), depth=2.0, bank_width=6.0)
+    # (on some seeds the first spot on the rim is lower than the lake: try further along the rim; a failed attempt applies nothing)
+    river, tries = {}, 0
+    for ang in (-114, -100, -128, -86, -142, -72):
+        tries += 1
+        a = np.radians(ang)
+        src = [c + np.cos(a) * size_m * 0.32, cz + np.sin(a) * size_m * 0.32] if tries > 1 else [c - size_m * 0.13, cz - size_m * 0.29]
+        # aim at the lake's near shore (a bit inside), not its centre: the island sits there and a river can't climb onto it
+        lp = np.asarray(lake_poly, np.float64); near = lp[np.argmin(np.hypot(lp[:, 0] - src[0], lp[:, 1] - src[1]))]
+        mouth = list(near + (np.asarray(lake_c) - near) * 0.3)
+        river = S.create_river_auto(src, mouth, width=max(5.0, size_m * 0.0045), depth=2.0, bank_width=6.0)
+        if river.get("ok"):
+            break
     log.append({"step": "river", "ok": river.get("ok", False), "warnings": [w.get("code") for w in river.get("warnings", [])],
-                "waterfalls": len(river.get("falls", []))})
+                "waterfalls": len(river.get("falls", [])), "attempts": tries, **({"error": river.get("error")} if not river.get("ok") else {})})
     # a climbable hero mountain on the open meadow: constant-grade spiral ramp to a flat summit (no cliffs in its way)
     ang = rng.uniform(-0.6, 0.6)
     mx, mz = c + np.cos(ang) * size_m * 0.17, cz + np.sin(ang) * size_m * 0.17 - size_m * 0.02
@@ -51,7 +64,14 @@ def highland_lake(size_m: float = 1536.0, seed: int = 1, trees: bool = True) -> 
     ramp_start = cm.get("ramp_start", [mx, mz])
     step("trail_to_mountain", S.create_trail(start, ramp_start, width=max(6.0, size_m * 0.0042), max_slope=0.28))
     north = [c - size_m * 0.06, size_m * 0.20]
-    step("trail_tiers", S.create_trail(start, north, width=max(6.0, size_m * 0.0042), max_slope=0.30))
+    tiers, tries = {}, 0
+    for slope, dx in ((0.30, -0.06), (0.30, 0.06), (0.34, -0.12), (0.34, 0.12), (0.38, 0.0)):
+        tries += 1
+        tiers = S.create_trail(start, [c + dx * size_m, size_m * 0.20], width=max(6.0, size_m * 0.0042), max_slope=slope)
+        if tiers.get("ok"):
+            break
+    log.append({"step": "trail_tiers", "ok": tiers.get("ok", False), "warnings": [w.get("code") for w in tiers.get("warnings", [])],
+                "attempts": tries, **({"error": tiers.get("error")} if not tiers.get("ok") else {})})
     peak = [mx, mz]
     if trees:
         step("vegetation", S.scatter_vegetation(["oak_trees", "pine_forest", "bushes", "cliff_rocks"], seed=seed + 4))
