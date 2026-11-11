@@ -417,7 +417,7 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
         by_species: dict[str, list[np.ndarray]] = {}
         for op in log:
             r = op.result
-            if not (op.enabled and op.kind == "scatter_vegetation" and r and "_instances" in r):
+            if not (op.enabled and op.kind in ("scatter_vegetation", "place_objects") and r and "_instances" in r):
                 continue
             inst = r["_instances"]
             for sid, spd in enumerate(op.params.get("species", [])):

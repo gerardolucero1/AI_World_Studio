@@ -72,10 +72,11 @@ class TerrainViewport(QOpenGLWidget):
     changed = Signal()                  # terrain edited / history changed
     stats = Signal(str)
     placed = Signal(str, list)          # (mode, [(x, y) in meters]) when a placement/paint gesture finishes
+    curve_edited = Signal(int, list)    # (operation index, new points) after dragging a handle in "edit_curve" mode
     brush_radius_changed = Signal(float)
 
     BRUSH_MODES = {"raise", "lower", "smooth", "flatten"}
-    SINGLE_MODES = {"mountain", "cliff", "lake"}
+    SINGLE_MODES = {"mountain", "cliff", "lake", "place"}
     MULTI_MODES = {"river", "path"}
     HINTS = {
         "navigate": "Mover vista · arrastra para girar · Mayús+arrastrar para desplazar",
@@ -87,9 +88,12 @@ class TerrainViewport(QOpenGLWidget):
         "mountain": "Haz clic donde quieras la montaña",
         "cliff": "Haz clic donde quieras la meseta con paredes de roca",
         "lake": "Haz clic donde quieras el lago",
+        "place": "Haz clic para colocar el objeto elegido (árbol, roca…) · el aro muestra su tamaño",
         "river": "Clic para marcar el recorrido (de arriba hacia abajo) · doble clic o Intro para terminar · Esc cancela",
         "path": "Clic para marcar el sendero · doble clic o Intro para terminar · Esc cancela",
+        "edit_curve": "Arrastra un punto blanco de un río, sendero o lago · al soltar se rehace todo lo que depende de él · Ctrl+Z deshace",
     }
+    HANDLE_PX = 14                      # how close (screen pixels) a click must be to grab a handle
 
     def __init__(self, session: WorldSession, parent=None):
         super().__init__(parent)
@@ -110,6 +114,7 @@ class TerrainViewport(QOpenGLWidget):
         self._sculpting = False
         self._invert = False
         self._stroke: Stroke | None = None
+        self._dabs: list = []              # dabs of the current brush stroke (logged as a replayable "brush" operation)
         self._cursor_pick = None
         self._chunks: dict[tuple[int, int], tuple[int, int, int, int]] = {}  # key -> (vao, vbo, count, ebo)
         self._ebos: dict[tuple[int, int], tuple[int, int]] = {}
@@ -121,6 +126,9 @@ class TerrainViewport(QOpenGLWidget):
         self._veg_count = 0
         self._tex = (0, 0)
         self._feat_lines: list[tuple[tuple, np.ndarray]] = []  # (color, Nx3 points)
+        self._handles: list[dict] = []    # editable curves: {op, key, closed, pts (N,2), idx (handle point indices)}
+        self._grab: tuple[dict, int] | None = None   # (curve, point index) being dragged
+        self._preview: list | None = None            # dragged curve, not applied yet
         self._gl_ready = False
         self._last_t = time.perf_counter()
         self._frame_ms = 0.0
@@ -318,6 +326,7 @@ class TerrainViewport(QOpenGLWidget):
         if self.show_features:
             self._draw_features(mvp)
         self._draw_multi(mvp)
+        self._draw_handles(mvp)
         if self._cursor_pick and self._ring_radius():
             self._draw_ring(mvp)
         self._frame_ms = (time.perf_counter() - t0) * 1000
@@ -387,7 +396,61 @@ class TerrainViewport(QOpenGLWidget):
             gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, ebo); gl.glBufferData(gl.GL_ELEMENT_ARRAY_BUFFER, idx.nbytes, idx, gl.GL_STATIC_DRAW)
             self._geo[key] = (vao, vbo, ebo, len(idx))
 
+    def _rebuild_handles(self) -> None:
+        from features.curves.edit import EDITABLE, handle_indices
+        self._handles = []
+        for i, op in enumerate(self.op_log):
+            if op.kind in EDITABLE and op.enabled:
+                key, closed = EDITABLE[op.kind]
+                pts = op.params.get(key)
+                if pts and len(pts) >= 2:
+                    arr = np.asarray(pts, np.float64)
+                    self._handles.append({"op": i, "key": key, "closed": closed, "pts": arr, "idx": handle_indices(arr, closed)})
+
+    def _project(self, x: float, y: float, z: float):
+        w, h = max(self.width(), 1), max(self.height(), 1)
+        c = self.camera.view_proj(w / h) @ np.array([x, y, z, 1.0])
+        if c[3] <= 1e-6:
+            return None
+        return ((c[0] / c[3] + 1) * 0.5 * w, (1 - c[1] / c[3]) * 0.5 * h)
+
+    def _handle_at(self, pos: QPoint):
+        best, bd = None, self.HANDLE_PX
+        for cv in self._handles:
+            for j in cv["idx"]:
+                x, z = cv["pts"][j]
+                sp = self._project(x, self.hf.sample(x, z) + 1.0, z)
+                if sp is None:
+                    continue
+                d = float(np.hypot(sp[0] - pos.x(), sp[1] - pos.y()))
+                if d < bd:
+                    best, bd = (cv, j), d
+        return best
+
+    def _draw_handles(self, mvp) -> None:
+        if self.mode != "edit_curve" or not self._handles:
+            return
+        gl.glUseProgram(self._line)
+        gl.glUniformMatrix4fv(gl.glGetUniformLocation(self._line, "mvp"), 1, False, mvp)
+        gl.glBindVertexArray(self._feat_vao)
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self._feat_vbo)
+        gl.glPointSize(11.0)
+        for cv in self._handles:
+            grabbed = self._grab is not None and self._grab[0] is cv and self._preview is not None
+            pts = np.asarray(self._preview, np.float64) if grabbed else cv["pts"]
+            if grabbed:                                   # the curve as it will be
+                line = pts if not cv["closed"] else np.vstack([pts, pts[:1]])
+                arr = np.ascontiguousarray([(x, self.hf.sample(x, z) + 0.8, z) for x, z in line], np.float32)
+                gl.glUniform3f(gl.glGetUniformLocation(self._line, "col"), 1.0, 0.9, 0.1)
+                gl.glBufferData(gl.GL_ARRAY_BUFFER, arr.nbytes, arr, gl.GL_STREAM_DRAW)
+                gl.glDrawArrays(gl.GL_LINE_STRIP, 0, len(arr))
+            hp = np.ascontiguousarray([(pts[j][0], self.hf.sample(*pts[j]) + 1.0, pts[j][1]) for j in cv["idx"]], np.float32)
+            gl.glUniform3f(gl.glGetUniformLocation(self._line, "col"), *((1.0, 0.9, 0.1) if grabbed else (1.0, 1.0, 1.0)))
+            gl.glBufferData(gl.GL_ARRAY_BUFFER, hp.nbytes, hp, gl.GL_STREAM_DRAW)
+            gl.glDrawArrays(gl.GL_POINTS, 0, len(hp))
+
     def _rebuild_feature_lines(self) -> None:
+        self._rebuild_handles()
         self._feat_lines = []
         for op in self.op_log:
             r = op.result
@@ -417,7 +480,15 @@ class TerrainViewport(QOpenGLWidget):
             gl.glBufferData(gl.GL_ARRAY_BUFFER, pts.nbytes, pts, gl.GL_STREAM_DRAW)
             gl.glDrawArrays(gl.GL_LINE_STRIP, 0, len(pts))
 
+    def apply_modify(self) -> None:
+        """After an operation was edited and the world replayed: redraw everything."""
+        self._mark_dirty((0, self.hf.ny, 0, self.hf.nx))
+        self._ops_changed()
+        self.changed.emit()
+
     def _ring_radius(self) -> float:
+        if self.mode == "edit_curve":
+            return 0.0
         if self.mode in self.BRUSH_MODES or self.mode == "paint":
             return self.params.radius
         if self.mode in self.SINGLE_MODES:
@@ -483,12 +554,14 @@ class TerrainViewport(QOpenGLWidget):
         if self._invert and tool in (Tool.RAISE, Tool.LOWER):
             tool = Tool.LOWER if tool is Tool.RAISE else Tool.RAISE
         self._stroke.before_edit(self.hf.world_to_rect(x, z, self.params.radius))
+        self._dabs.append([tool.value, round(float(x), 3), round(float(z), 3)])
         rect = apply_dab(self.hf, tool, x, z, self.params)
         if rect:
             self._mark_dirty(rect)
 
     def _begin_stroke(self) -> None:
         self._stroke = Stroke(self.hf, self.tool.value)
+        self._dabs = []
         if self.tool is Tool.FLATTEN and self._cursor_pick:
             self.params.target_height = self._cursor_pick[1]
         self._sculpting = True
@@ -496,8 +569,12 @@ class TerrainViewport(QOpenGLWidget):
 
     def _end_stroke(self) -> None:
         if self._stroke:
-            self.session.commit_stroke(self._stroke)
+            prm = self.params
+            op = Operation("brush", dict(dabs=self._dabs, radius=prm.radius, strength=prm.strength, hardness=prm.hardness,
+                                         target_height=prm.target_height, strength_scale=prm.strength_scale)) if self._dabs else None
+            self.session.commit_stroke(self._stroke, op)      # logged (replayable) + sits vegetation back on the new ground
             self._stroke = None
+            self._veg_dirty = True
             self.changed.emit()
         self._sculpting = False
 
@@ -569,6 +646,11 @@ class TerrainViewport(QOpenGLWidget):
                 hit = self._pick_at(p)
                 if hit:
                     self._multi.append((hit[0], hit[2]))
+            elif self.mode == "edit_curve":
+                self._grab = self._handle_at(p)
+                self._preview = None
+                if self._grab is None:
+                    self._drag = "pan" if shift else "orbit"      # not on a handle: move the view as usual
         if self._drag == "orbit":
             hit = self._pick_at(p)
             if hit:
@@ -588,6 +670,12 @@ class TerrainViewport(QOpenGLWidget):
             self.camera.orbit(dx, dy)
         elif self._drag == "pan":
             self.camera.pan(dx, dy, self.height())
+        elif self._grab is not None:
+            from features.curves.edit import drag_points
+            hit = self._pick_at(p)
+            if hit:
+                cv, j = self._grab
+                self._preview = drag_points(cv["pts"], j, (hit[0], hit[2]), cv["closed"])
         else:
             self._cursor_pick = self._pick_at(p)
             if self.mode == "paint" and self._paint_pts and self._cursor_pick:
@@ -598,7 +686,12 @@ class TerrainViewport(QOpenGLWidget):
 
     def mouseReleaseEvent(self, e: QMouseEvent) -> None:
         b = e.button()
-        if self._drag and (b in (Qt.RightButton, Qt.MiddleButton) or (b == Qt.LeftButton and self.mode == "navigate")):
+        if b == Qt.LeftButton and self._grab is not None:
+            cv, _ = self._grab
+            pts, self._grab, self._preview = self._preview, None, None
+            if pts is not None:
+                self.curve_edited.emit(cv["op"], pts)
+        if self._drag and (b in (Qt.RightButton, Qt.MiddleButton) or (b == Qt.LeftButton and self.mode in ("navigate", "edit_curve"))):
             self._drag = None
             self.setCursor(Qt.OpenHandCursor if self.mode == "navigate" else Qt.CrossCursor)
         if b == Qt.LeftButton:

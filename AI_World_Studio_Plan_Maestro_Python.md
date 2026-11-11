@@ -888,7 +888,7 @@ Objetivo de referencia visual: Genshin Impact / Zelda BOTW. Proyecto de pruebas 
 | 14 | API / MCP | **Hecho en su mayor parte**: 52 herramientas (MCP/REST/CLI), tareas asíncronas, checkpoints |
 | 15 | Flujo autónomo | **Parcial**: sin modos Assisted/Autonomous/Batch ni autocorrección automática |
 | 16 | Exportador Godot | **Hecho en lo esencial**: chunks GLB + LOD + colisión **o Terrain3D** (regiones horneadas con el addon real, 8 texturas, mapa de control, colisión, navegación), agua/cascadas, vegetación MultiMesh, hierba GPU, shaders estilizados, navegación Recast, marcadores, manifiesto, validación, reubicación. Faltan streaming, partículas |
-| 17 | Interfaz | **Parcial**: en español, herramientas por modo, historial, generador y exportador. Faltan editor de curvas, biblioteca de assets, panel de agente |
+| 17 | Interfaz | **Parcial**: en español, herramientas por modo, historial, generador, diálogo de exportación (Terrain3D, material y agua del juego), colocar objetos, editor de curvas (ríos, senderos, lagos) con repetición del historial. Faltan biblioteca de assets, overlays, panel de agente |
 | 21 | Pruebas | **Hecho en lo esencial**: 78 pruebas (con Godot real). Faltan rendimiento y otras versiones de Godot |
 | 23 | Procedencia de assets | **No hecho** (todo es procedural y propio por ahora) |
 

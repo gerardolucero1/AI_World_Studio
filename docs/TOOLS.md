@@ -148,6 +148,18 @@ Returns reachable fraction, whether the highest summit is reachable, and the unr
 
 Scatter vegetation by altitude/slope/water rules. presets: oak_trees|pine_forest|bushes|cliff_rocks|riparian_reeds|alpine_rocks (also conifer_forest, meadow_shrubs), or custom species dicts.
 
+## `place_objects(objects: 'list[dict]') -> 'dict'`
+
+Place individual objects exactly where you want them (a landmark tree, a boulder, a lone pine), grounded on the terrain.
+objects: [{"kind": oak|pine|shrub|reed|rock, "x": m, "y": m, "scale": 1.0 (3 = a huge landmark tree), "yaw": deg, "sink": m into the ground}].
+Exported like vegetation (same meshes). Heights follow later terrain edits.
+
+## `modify_operation(index: 'int', params: 'dict') -> 'dict'`
+
+Change the parameters of an operation already applied (see list_operations for its index and params), e.g. move a river's
+path, a lake's polygon, a mountain's height, a trail's end. Everything after it is replayed from the original terrain, so dependent
+features adapt. Only the keys you give change. One step: undo restores the previous version.
+
 ## `paint_terrain_material(x: 'float', y: 'float', radius: 'float', material: 'str', strength: 'float' = 1.0, hardness: 'float' = 0.3) -> 'dict'`
 
 Paint a surface material over rule-based materials. material: grass|dirt|rock|snow|sand|mud|wet_rock|gravel.
@@ -212,6 +224,11 @@ Operations applied so far (kind, params, warnings).
 ## `prepare_godot_export(chunk_cells: 'int | None' = None) -> 'dict'`
 
 Dry run: chunk grid, LOD levels, instance counts and likely problems, without writing files.
+
+## `inspect_godot_project(godot_project: 'str') -> 'dict'`
+
+Look inside a Godot project before exporting into it: Terrain3D installed (version), the Terrain3DMaterials it uses (its own look, also
+embedded in scenes), water scripts that answer surface_at (they can draw our water), and a `suggestion` of export_to_godot arguments.
 
 ## `export_to_godot(path: 'str | None' = None, chunk_cells: 'int | None' = None, res_prefix: 'str' = 'res://', verify: 'bool' = False, background: 'bool' = False, godot_project: 'str | None' = None, subfolder: 'str' = 'GodotWorld', profile: 'str' = 'full', include_preview: 'bool' = True, navigation: 'str' = 'auto', grass: 'bool' = True, grass_spacing: 'float' = 1.5, terrain: 'str' = 'mesh', terrain3d_addon: 'str | None' = None, terrain3d_material: 'str | None' = None, terrain3d_assets: 'str | None' = None, terrain3d_texture_ids: 'dict | None' = None, terrain3d_collision: 'str' = 'full', water_script: 'str | None' = None) -> 'dict'`
 

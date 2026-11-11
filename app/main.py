@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QKeySequence, QPalette, QSurfaceFormat
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox, QDockWidget, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QMainWindow, QMessageBox,
                                QPushButton, QScrollArea, QSlider, QSpinBox, QToolBar, QVBoxLayout, QWidget)
 
@@ -24,7 +24,7 @@ MATERIAL_ES = {"grass": "Pasto", "dirt": "Tierra", "rock": "Roca", "snow": "Niev
 OP_ES = {"noise": "Relieve base", "mountain": "Montaña", "mountain_range": "Cordillera", "plateau": "Meseta",
          "cliff_plateau": "Meseta con paredes", "valley": "Valle", "basin": "Cuenca", "river": "Río", "lake": "Lago",
          "path": "Sendero", "thermal_erosion": "Erosión térmica", "hydraulic_erosion": "Erosión hidráulica",
-         "scatter_vegetation": "Vegetación", "paint_material": "Pintura de suelo", "sculpt": "Pincel"}
+         "scatter_vegetation": "Vegetación", "place_objects": "Objetos colocados", "paint_material": "Pintura de suelo", "sculpt": "Pincel", "brush": "Pincel"}
 
 
 WARN_ES = {
@@ -51,6 +51,7 @@ class ToolSpec:
 
 GROUPS: list[tuple[str, list[ToolSpec]]] = [
     ("Vista", [ToolSpec("navigate", "✥", "Mover vista", "Mover la vista")]),
+    ("Editar", [ToolSpec("edit_curve", "✎", "Editar ríos, lagos y senderos", "Editar ríos, lagos y senderos")]),
     ("Esculpir", [ToolSpec("raise", "▲", "Subir terreno", "Subir terreno"),
                   ToolSpec("lower", "▼", "Bajar terreno", "Bajar terreno"),
                   ToolSpec("smooth", "≈", "Suavizar", "Suavizar"),
@@ -59,6 +60,7 @@ GROUPS: list[tuple[str, list[ToolSpec]]] = [
     ("Crear en el mapa", [ToolSpec("mountain", "⛰", "Montaña", "Crear montaña", "Radio (m)", "Altura (m)"),
                           ToolSpec("cliff", "▇", "Meseta con paredes", "Crear meseta con paredes de roca", "Radio (m)", "Altura sobre el suelo (m)"),
                           ToolSpec("lake", "◉", "Lago", "Crear lago", "Radio (m)"),
+                          ToolSpec("place", "🌳", "Colocar objeto", "Colocar un objeto (árbol, roca…)"),
                           ToolSpec("river", "∿", "Río", "Dibujar río", "Ancho (m)"),
                           ToolSpec("path", "┈", "Sendero", "Dibujar sendero", "Ancho (m)")]),
 ]
@@ -129,10 +131,13 @@ class MainWindow(QMainWindow):
         self.resize(1440, 860)
         self.setStyleSheet(STYLE)
         self.session = WorldSession(new_terrain())
+        from core.world import service as S
+        S.SESSION = self.session          # one world: presets, tools (CLI/MCP-style calls) and the editor all act on what is on screen
         self.view = TerrainViewport(self.session)
         self.setCentralWidget(self.view)
         self.stat = QLabel(); self.statusBar().addPermanentWidget(self.stat)
         self.view.stats.connect(self.stat.setText)
+        self.view.curve_edited.connect(self.on_curve_edited)
         self.view.placed.connect(self.on_placed)
         self.view.brush_radius_changed.connect(lambda r: self.s_radius.set_value(r))
         self.tool_buttons: dict[str, QPushButton] = {}
@@ -233,6 +238,22 @@ class MainWindow(QMainWindow):
         f2.addRow(self.lbl_size, self.s_size); f2.addRow(self.lbl_height, self.s_height); f2.addRow("Semilla (variación)", self.seed)
         lay.addWidget(self.g_create)
 
+        self.g_place = QGroupBox("Objeto"); fp = QFormLayout(self.g_place)
+        self.c_kind = QComboBox()
+        for k, label in [("oak", "Roble (árbol de copa)"), ("pine", "Pino"), ("shrub", "Arbusto"), ("reed", "Juncos"), ("rock", "Roca")]:
+            self.c_kind.addItem(label, k)
+        self.s_scale = QDoubleSpinBox(); self.s_scale.setRange(0.2, 8.0); self.s_scale.setSingleStep(0.1); self.s_scale.setValue(1.0); self.s_scale.setSuffix(" ×")
+        self.s_scale.setToolTip("1 = tamaño normal; 3 = un árbol gigante que sirve de punto de referencia")
+        self.s_yaw = QSpinBox(); self.s_yaw.setRange(0, 359); self.s_yaw.setSuffix(" °")
+        self.ch_yaw_rand = QCheckBox("Giro al azar"); self.ch_yaw_rand.setChecked(True)
+        self.s_sink = QDoubleSpinBox(); self.s_sink.setRange(0.0, 5.0); self.s_sink.setSingleStep(0.1); self.s_sink.setSuffix(" m")
+        self.s_sink.setToolTip("Cuánto se hunde en el suelo (útil en rocas grandes)")
+        fp.addRow("Tipo", self.c_kind); fp.addRow("Tamaño", self.s_scale); fp.addRow("Giro", self.s_yaw); fp.addRow(self.ch_yaw_rand)
+        fp.addRow("Hundir", self.s_sink)
+        for sig in (self.c_kind.currentIndexChanged, self.s_scale.valueChanged):
+            sig.connect(lambda *_: self._place_marker())
+        lay.addWidget(self.g_place)
+
         g = QGroupBox("Acciones rápidas (todo el mapa)"); v = QVBoxLayout(g)
         for label, fn, tip in [("🌄  Generar relieve base", self.op_noise, "Añade colinas y valles suaves a todo el mapa"),
                                ("🪨  Erosión térmica", self.op_thermal, "Desmorona las pendientes demasiado empinadas"),
@@ -292,6 +313,9 @@ class MainWindow(QMainWindow):
         self.g_brush.setVisible(brush)
         self.c_material.setVisible(tid == "paint"); self.row_material.setVisible(tid == "paint")
         self.g_create.setVisible(spec.size_label is not None)
+        self.g_place.setVisible(tid == "place")
+        if tid == "place":
+            self._place_marker()
         if spec.size_label:
             self.lbl_size.setText(spec.size_label)
             defaults = {"mountain": (w * 0.12, w * 0.12), "cliff": (w * 0.08, w * 0.05), "lake": (w * 0.06, 0),
@@ -341,9 +365,50 @@ class MainWindow(QMainWindow):
             out.append((float(np.clip(x + np.cos(a) * rr, m, sx - m)), float(np.clip(z + np.sin(a) * rr, m, sz - m))))
         return out
 
+    def on_curve_edited(self, index: int, pts: list):
+        """A handle of a river/trail/lake was dragged: change that operation and replay the world (dependent features adapt)."""
+        if not self.session.can_modify:
+            QMessageBox.information(self, "No se puede editar", "Este mundo se abrió sin su terreno original (proyecto antiguo): "
+                                    "guárdalo y vuelve a abrirlo, o crea el elemento de nuevo."); return
+        from features.curves.edit import EDITABLE
+        op = self.session.op_log[index]
+        key = EDITABLE[op.kind][0]
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self.session.modify(index, {key: pts})
+        except Exception as ex:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "No se pudo editar", f"{type(ex).__name__}: {ex}"); return
+        QApplication.restoreOverrideCursor()
+        self.view.apply_modify()
+        warns = [(i, w) for i, o in enumerate(self.session.op_log) if i >= index for w in (o.result or {}).get("warnings", [])]
+        if warns:
+            self.warn.setText("⚠ " + "\n⚠ ".join(f"{OP_ES.get(self.session.op_log[i].kind, '')}: {WARN_ES.get(w.get('code'), w['message'])}"
+                                                  for i, w in warns[:6]))
+            self.warn.show()
+        else:
+            self.warn.hide()
+        self.statusBar().showMessage(f"{OP_ES.get(op.kind, op.kind)} editado; se rehízo todo lo que depende de él.", 6000)
+
+    def _place_marker(self):
+        from biomes.scatter.place import KINDS
+        self.view.marker_radius = KINDS[self.c_kind.currentData()][0] * self.s_scale.value()
+        self.view.update()
+
     def on_placed(self, mode: str, pts: list):
         hf = self.session.hf; seed = self.seed.value(); r = self.s_size.value
-        if mode == "mountain":
+        if mode == "place":
+            import random
+            from biomes.scatter.place import place_params
+            x, z = pts[0]
+            yaw = random.uniform(0, 360) if self.ch_yaw_rand.isChecked() else float(self.s_yaw.value())
+            try:
+                params = place_params([dict(kind=self.c_kind.currentData(), x=x, y=z, scale=self.s_scale.value(), yaw=yaw,
+                                            sink=self.s_sink.value())], hf.size)
+            except ValueError as ex:
+                QMessageBox.warning(self, "No se pudo colocar", str(ex)); return
+            self._op("place_objects", **params)
+        elif mode == "mountain":
             x, z = pts[0]
             self._op("mountain", x=x, y=z, radius=r, height=self.s_height.value, roughness=0.25, seed=seed)
         elif mode == "cliff":
@@ -434,23 +499,30 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Paisaje generado. Zona transitable: {tr['reachable_fraction']:.0%}; cima alcanzable: {'sí' if tr['summit_reachable'] else 'no'}.", 10000)
 
     def on_export(self):
-        d = QFileDialog.getExistingDirectory(self, "Carpeta de destino para el proyecto de Godot (vacía o de una exportación anterior)")
-        if not d:
+        from app.export_dialog import ExportDialog, run_export
+        dlg = ExportDialog(self)
+        if dlg.exec() != ExportDialog.Accepted:
             return
-        from exporters.godot.exporter import export_world
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            r = export_world(self.session, d)
-        except Exception as ex:  # noqa: BLE001
-            QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "No se pudo exportar", str(ex)); return
-        QApplication.restoreOverrideCursor()
-        errs = [f for f in r["validation"]["findings"] if f["severity"] == "error"]
-        QMessageBox.information(self, "Exportación lista", (
-            f"Se exportaron {r['chunks']} chunks, {r['features']['lakes']} lagos, {r['features']['rivers']} ríos, "
-            f"{r['features']['cliffs']} acantilados y {r['vegetation_instances']} plantas.\n\n"
-            f"Carpeta: {d}\n\nAbre esa carpeta como proyecto en Godot 4.7 (Importar) y ejecuta World.tscn."
-            + (f"\n\nAvisos de validación: {len(errs)} errores." if errs else "")))
+        kw = dlg.kwargs()
+
+        def done(r):
+            if not r.get("ok"):
+                QMessageBox.critical(self, "No se pudo exportar", str(r.get("error", r))[:1500]); return
+            f = r.get("features", {})
+            errs = [x for x in r.get("validation", {}).get("findings", []) if x["severity"] == "error"]
+            v = r.get("godot_verification")
+            where = r.get("path", "")
+            lines = [f"Terreno: {'Terrain3D' if r.get('terrain') == 'terrain3d' else str(r.get('chunks')) + ' chunks'} · {f.get('lakes', 0)} lagos · "
+                     f"{f.get('rivers', 0)} ríos · {f.get('waterfalls', 0)} cascadas · {r.get('vegetation_instances', 0)} plantas.",
+                     f"Carpeta: {where}"]
+            if errs:
+                lines.append(f"⚠ Validación: {len(errs)} errores (ver WorldData/manifest.json).")
+            if v is not None:
+                lines.append("✓ Verificado en Godot." if v.get("ok") else f"⚠ La verificación en Godot falló: {v.get('error') or v.get('godot_errors')}")
+            lines.append(r.get("next_step", ""))
+            QMessageBox.information(self, "Exportación lista", "\n\n".join(l for l in lines if l))
+            self.statusBar().showMessage(f"Exportado a {where}", 8000)
+        run_export(self, kw, done)
 
     def show_help(self):
         QMessageBox.information(self, "Cómo se maneja", (

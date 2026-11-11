@@ -14,6 +14,7 @@ from features.paths.path import create_path
 from geometry.cliffs.cliff import create_cliff_plateau
 from materials.materials import paint_material
 from biomes.scatter.scatter import scatter
+from biomes.scatter.place import place_objects
 
 ALGO_VERSION = 1
 
@@ -30,6 +31,17 @@ def _sculpt(hf, tool: str, points, radius: float, strength: float = 0.5, hardnes
     return rect
 
 
+def _brush(hf, dabs, radius: float, strength: float = 0.5, hardness: float = 0.0, target_height: float = 0.0,
+           strength_scale: float = 2.0):
+    """A brush stroke made in the editor: dabs = [[tool, x, y], ...] in the order they were applied (Ctrl can flip raise/lower mid-stroke)."""
+    from terrain.sculpt.brushes import BrushParams, Tool, apply_dab, union
+    prm = BrushParams(radius, strength, hardness, target_height, strength_scale)
+    rect = None
+    for tool, x, y in dabs:
+        rect = union(rect, apply_dab(hf, Tool(tool), float(x), float(y), prm))
+    return rect
+
+
 def _thermal(hf, **k): erosion.thermal(hf, **k); return 0, hf.ny, 0, hf.nx
 def _hydraulic(hf, **k): erosion.hydraulic(hf, **k); return 0, hf.ny, 0, hf.nx
 
@@ -39,7 +51,7 @@ REGISTRY: dict[str, Callable[..., Rect]] = {
     "noise": shapes.apply_noise, "mountain": shapes.mountain, "mountain_range": shapes.mountain_range,
     "plateau": shapes.plateau, "bowl": shapes.bowl, "cap": shapes.cap, "border_mountains": shapes.border_mountains, "terrace": shapes.terrace, "valley": shapes.valley, "basin": shapes.basin,
     "cliff_plateau": create_cliff_plateau, "river": create_river, "lake": create_lake, "path": create_path,
-    "paint_material": paint_material, "scatter_vegetation": scatter,
+    "paint_material": paint_material, "scatter_vegetation": scatter, "place_objects": place_objects, "brush": _brush,
     "thermal_erosion": _thermal, "hydraulic_erosion": _hydraulic,
 }
 
@@ -54,9 +66,9 @@ class Operation:
 
 
 # ops that never modify heights: no tile snapshot needed, but they are logged and undoable
-NON_TERRAIN = {"paint_material", "scatter_vegetation"}
+NON_TERRAIN = {"paint_material", "scatter_vegetation", "place_objects"}
 # ops that need earlier operations (water/path masks)
-CONTEXTUAL = {"scatter_vegetation"}
+CONTEXTUAL = {"scatter_vegetation", "place_objects"}
 
 
 def run(hf: Heightfield, op: Operation, log=()) -> Rect | None:
@@ -101,4 +113,6 @@ def regenerate_transient(hf: Heightfield, ops: list[Operation]) -> None:
             op.result = dict(op.result or {}); op.result["_mesh"] = cliff_mesh_only(hf, **op.params)
         elif op.enabled and op.kind == "scatter_vegetation":
             _, rep = scatter(hf, **op.params, _log=list(done)); op.result = rep
+        elif op.enabled and op.kind == "place_objects":
+            _, rep = place_objects(hf, **op.params, _log=list(done)); op.result = rep
         done.append(op)

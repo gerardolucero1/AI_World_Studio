@@ -177,3 +177,21 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   capturas de las cascadas con su entorno.
 - Límites: nuestros ríos no se unen; la cinta del río no tiene colisión (como en el juego); vegetación sobre el agua en algún punto (la dispersión no
   conoce la cinta de agua del juego).
+
+
+## Editor: exportación, objetos sueltos y edición de curvas (fase 11)
+- El editor y las herramientas comparten la sesión (`service.SESSION = window.session`). Antes «Generar paisaje de ejemplo» generaba en una sesión
+  oculta y el editor no mostraba nada.
+- Diálogo «Exportar a Godot» (`app/export_dialog.py`): dentro de un proyecto (subcarpeta) o independiente; malla o Terrain3D; material y script de agua
+  del juego (detectados por `exporters/godot/host_project.py` / herramienta `inspect_godot_project`); ID de textura de senderos; navegación, hierba,
+  vista previa y verificación. Recuerda la última elección (QSettings) y exporta en segundo plano (`export_to_godot(background=True)`).
+- `place_objects` (herramienta y «Colocar objeto» en el editor): roble/pino/arbusto/juncos/roca con posición, escala, giro y hundimiento exactos; mismo
+  formato que la vegetación (`_instances`), así que se ve, valida y exporta igual.
+- La vegetación y los objetos se reasientan tras cada cambio de terreno, deshacer o rehacer (`session.reground`).
+- Edición de operaciones pasadas: `session.origin` (terreno inicial, `origin.npy` en el `.awp`) + `session.modify` repite el historial; las pinceladas
+  del editor se registran como operaciones `brush` (antes solo eran pasos de deshacer y se habrían perdido al repetir). Deshacer restaura parámetros
+  y resultados. Los checkpoints guardan también los parámetros. Repetir 768 m ≈ 2 s.
+- «Editar ríos, lagos y senderos»: hasta 12 asas por curva (`features/curves/edit.py`); arrastrar una mueve los puntos vecinos con caída suave a lo
+  largo de la curva (los recorridos autoenrutados tienen cientos de puntos); vista previa amarilla; al soltar, `modify` y aviso de lo que se rompió.
+- Límites: solo curvas (río, sendero, lago) desde la UI; montañas, mesetas, etc. se editan con `modify_operation`. El sendero en espiral de la montaña
+  escalable junta muchas asas. Los ríos/senderos automáticos (`create_river_auto`, `create_trail`) se editan como recorrido fijo (no vuelven a enrutarse).

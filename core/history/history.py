@@ -61,6 +61,11 @@ class History:
         del self._undo[:-self.limit]
         self._redo.clear()
 
+    def push_always(self, s: Stroke) -> None:
+        self._undo.append(s)
+        del self._undo[:-self.limit]
+        self._redo.clear()
+
     def undo(self) -> Rect | None:
         if not self._undo:
             return None

@@ -8,7 +8,7 @@ Se puede usar de cuatro formas, todas sobre el mismo núcleo (`core/world/sessio
 |---|---|
 | Editor de escritorio (PySide6) | `python awstudio.py ui` |
 | Línea de comandos | `python awstudio.py generate highland_lake --size 1536 --seed 1 --godot-project <proyecto Godot>` |
-| Agente IA (MCP, 52 herramientas) | `.mcp.json` ya incluido → `python -m mcp_server.server` |
+| Agente IA (MCP, 55 herramientas) | `.mcp.json` ya incluido → `python -m mcp_server.server` |
 | API REST | `python awstudio.py api` → http://127.0.0.1:8000/docs |
 
 ## Instalación

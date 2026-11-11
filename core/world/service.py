@@ -368,6 +368,34 @@ def scatter_vegetation(presets: list[str] | None = None, species: list[dict] | N
     return _apply("scatter_vegetation", dict(species=sp, seed=seed, region=region, exclusion=exclusion))
 
 
+def modify_operation(index: int, params: dict) -> dict:
+    """Change the parameters of an operation already applied (see list_operations for its index and params), e.g. move a river's
+    path, a lake's polygon, a mountain's height, a trail's end. Everything after it is replayed from the original terrain, so dependent
+    features adapt. Only the keys you give change. One step: undo restores the previous version."""
+    s = SESSION
+    try:
+        old_kind = s.op_log[index].kind if 0 <= index < len(s.op_log) else None
+        rect = s.modify(index, dict(params))
+        op = s.op_log[index]
+        return {"ok": True, "operation": old_kind, "index": index, "revision": s.revision, "affected_region_m": _rect_m(rect),
+                "result": _brief(op.result), "warnings": (op.result or {}).get("warnings", []),
+                "later_warnings": {i: [w.get("code") for w in (o.result or {}).get("warnings", [])] for i, o in enumerate(s.op_log)
+                                   if i > index and (o.result or {}).get("warnings")}}
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+def place_objects(objects: list[dict]) -> dict:
+    """Place individual objects exactly where you want them (a landmark tree, a boulder, a lone pine), grounded on the terrain.
+    objects: [{"kind": oak|pine|shrub|reed|rock, "x": m, "y": m, "scale": 1.0 (3 = a huge landmark tree), "yaw": deg, "sink": m into the ground}].
+    Exported like vegetation (same meshes). Heights follow later terrain edits."""
+    from biomes.scatter.place import place_params
+    try:
+        return _apply("place_objects", place_params(objects, SESSION.hf.size))
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
 def paint_terrain_material(x: float, y: float, radius: float, material: str, strength: float = 1.0, hardness: float = 0.3) -> dict:
     """Paint a surface material over rule-based materials. material: grass|dirt|rock|snow|sand|mud|wet_rock|gravel."""
     return _apply("paint_material", dict(x=x, y=y, radius=radius, material=material, strength=strength, hardness=hardness))
@@ -499,7 +527,7 @@ def compare_world_versions(checkpoint: str) -> dict:
     if checkpoint not in SESSION.checkpoints:
         return {"ok": False, "error": f"unknown checkpoint {checkpoint!r}"}
     with SESSION.lock:
-        old, ops = SESSION.checkpoints[checkpoint]; hf = SESSION.hf; d = hf.data - old
+        old, ops = SESSION.checkpoints[checkpoint][:2]; hf = SESSION.hf; d = hf.data - old
         ch = np.abs(d) > 0.01
         box = None
         if ch.any():
@@ -629,6 +657,16 @@ def export_to_godot(path: str | None = None, chunk_cells: int | None = None, res
         return _err(e)
 
 
+def inspect_godot_project(godot_project: str) -> dict:
+    """Look inside a Godot project before exporting into it: Terrain3D installed (version), the Terrain3DMaterials it uses (its own look, also
+    embedded in scenes), water scripts that answer surface_at (they can draw our water), and a `suggestion` of export_to_godot arguments."""
+    from exporters.godot.host_project import inspect_host_project
+    try:
+        return inspect_host_project(godot_project)
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
 def get_export_status(task_id: str | None = None) -> dict:
     """Result of the last export, or of a background export task."""
     if task_id:
@@ -639,6 +677,6 @@ def get_export_status(task_id: str | None = None) -> dict:
 TOOLS = [get_capabilities, create_world, set_world_style, generate_landscape, get_world_info, get_terrain_info, save_world, load_world, sculpt_terrain, raise_terrain, lower_terrain,
          smooth_terrain, flatten_terrain, apply_terrain_noise, create_mountain, create_mountain_range, create_valley, create_bowl, terrace_terrain, create_border_mountains, create_basin,
          create_plateau, create_cliff, apply_erosion, get_task_status, cancel_task, create_river, create_river_auto, create_lake, create_path, create_trail, create_climbable_mountain, analyze_traversability,
-         scatter_vegetation, paint_terrain_material, inspect_terrain, inspect_region, analyze_elevation, analyze_slope,
+         scatter_vegetation, place_objects, modify_operation, paint_terrain_material, inspect_terrain, inspect_region, analyze_elevation, analyze_slope,
          detect_terrain_issues, validate_world, get_world_preview, capture_world_view, create_checkpoint, rollback_to_checkpoint,
-         compare_world_versions, undo, redo, list_operations, prepare_godot_export, export_to_godot, get_export_status]
+         compare_world_versions, undo, redo, list_operations, prepare_godot_export, inspect_godot_project, export_to_godot, get_export_status]
