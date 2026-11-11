@@ -213,7 +213,7 @@ Operations applied so far (kind, params, warnings).
 
 Dry run: chunk grid, LOD levels, instance counts and likely problems, without writing files.
 
-## `export_to_godot(path: 'str | None' = None, chunk_cells: 'int | None' = None, res_prefix: 'str' = 'res://', verify: 'bool' = False, background: 'bool' = False, godot_project: 'str | None' = None, subfolder: 'str' = 'GodotWorld', profile: 'str' = 'full', include_preview: 'bool' = True, navigation: 'str' = 'auto', grass: 'bool' = True, grass_spacing: 'float' = 1.5, terrain: 'str' = 'mesh', terrain3d_addon: 'str | None' = None, terrain3d_material: 'str | None' = None, terrain3d_assets: 'str | None' = None, terrain3d_texture_ids: 'dict | None' = None, terrain3d_collision: 'str' = 'full') -> 'dict'`
+## `export_to_godot(path: 'str | None' = None, chunk_cells: 'int | None' = None, res_prefix: 'str' = 'res://', verify: 'bool' = False, background: 'bool' = False, godot_project: 'str | None' = None, subfolder: 'str' = 'GodotWorld', profile: 'str' = 'full', include_preview: 'bool' = True, navigation: 'str' = 'auto', grass: 'bool' = True, grass_spacing: 'float' = 1.5, terrain: 'str' = 'mesh', terrain3d_addon: 'str | None' = None, terrain3d_material: 'str | None' = None, terrain3d_assets: 'str | None' = None, terrain3d_texture_ids: 'dict | None' = None, terrain3d_collision: 'str' = 'full', water_script: 'str | None' = None) -> 'dict'`
 
 Export the world as a Godot 4.7 scene package (World.tscn + GLB chunks with LOD/collision, water, cliffs, vegetation MultiMeshes,
 stylized materials/shaders, textures, manifest). Two ways to call it:
@@ -227,6 +227,8 @@ terrain: 'mesh' (GLB chunks, no addon needed) | 'terrain3d' (a Terrain3D node wi
 godot_project/addons/terrain_3d, or terrain3d_addon=<addon folder>; standalone exports bundle the addon). To use the game's own Terrain3D look pass
 terrain3d_material / terrain3d_assets (res:// paths in the project) and terrain3d_texture_ids ({"grass": 0, "rock": 1, ...}: our 8 materials ->
 its texture slots). terrain3d_collision: 'full' | 'dynamic'.
+Water is also written as data (WorldData/water.json + surface.r32: river ribbons with simulated waterfalls, lake cells, a surface grid
+for wading/swimming); water_script='res://…/water.gd' puts the game's own water node in World.tscn instead of our water meshes.
 Refuses to overwrite a non-empty folder that is not a previous export. verify=True imports it in the real Godot (headless) and checks it.
 
 ## `get_export_status(task_id: 'str | None' = None) -> 'dict'`

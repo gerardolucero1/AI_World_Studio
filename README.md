@@ -40,6 +40,10 @@ El paquete exportado (carpeta) es independiente del proyecto que lo recibe:
   como overlay, mezcla = proporción; bit de navegación fuera del agua. Para usar el aspecto de tu juego: `terrain3d_material` / `terrain3d_assets`
   (rutas `res://` de tu proyecto) y `terrain3d_texture_ids` (`{"grass": 0, "rock": 1, …}`: nuestros 8 materiales → tus ranuras). Agua, cascadas,
   vegetación, hierba, marcadores y navegación funcionan igual (la navegación se hornea desde la geometría de Terrain3D).
+- **Agua para el sistema del juego**: siempre se escriben `WorldData/water.json` (ríos como cintas de muestras con cascadas simuladas columna a
+  columna, lagos como celdas) y `WorldData/surface.r32` (altura del agua cada 4 m, para vadear/nadar). Con `water_script="res://…/water.gd"` el
+  `World.tscn` lleva ese nodo (con `water_file`, `surface_file`, `origin`, `surf_cell`, `surf_size`) en lugar de nuestras mallas de agua. Probado con el
+  `water.gd` de Wicktale: la heroína nada en el lago y las cascadas salen con su shader toon.
 - Salidas portables para otros flujos: `Textures/heightmap16.png` y `heightmap.r16` (importables por addons de terreno), `splat0-2.png`, `WorldData/manifest.json`.
 - Se instancia como cualquier escena: `var w = load("res://addons/mi_mundo/World.tscn").instantiate(); add_child(w)`.
 

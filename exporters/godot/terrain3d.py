@@ -187,6 +187,7 @@ def copy_external_deps(pkg: Path, dst_project: Path, host_root: Path | None, pre
         return []
     copied: list[str] = []
     todo = [f for f in dst_project.rglob("*") if f.suffix in (".tscn", ".tres", ".gdshader", ".gdshaderinc") and "addons" not in f.relative_to(dst_project).parts]
+    TEXT = (".tres", ".gdshader", ".gdshaderinc", ".tscn", ".gd")
     seen: set[str] = set()
     while todo:
         f = todo.pop()
@@ -197,7 +198,7 @@ def copy_external_deps(pkg: Path, dst_project: Path, host_root: Path | None, pre
             src, dst = host_root / ref, dst_project / ref
             if src.is_file() and not dst.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src, dst); copied.append(ref)
-                if dst.suffix in (".tres", ".gdshader", ".gdshaderinc", ".tscn"):
+                if dst.suffix in TEXT:
                     todo.append(dst)
     return copied
 

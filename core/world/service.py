@@ -579,7 +579,7 @@ def export_to_godot(path: str | None = None, chunk_cells: int | None = None, res
                     profile: str = "full", include_preview: bool = True, navigation: str = "auto", grass: bool = True,
                     grass_spacing: float = 1.5, terrain: str = "mesh", terrain3d_addon: str | None = None,
                     terrain3d_material: str | None = None, terrain3d_assets: str | None = None,
-                    terrain3d_texture_ids: dict | None = None, terrain3d_collision: str = "full") -> dict:
+                    terrain3d_texture_ids: dict | None = None, terrain3d_collision: str = "full", water_script: str | None = None) -> dict:
     """Export the world as a Godot 4.7 scene package (World.tscn + GLB chunks with LOD/collision, water, cliffs, vegetation MultiMeshes,
     stylized materials/shaders, textures, manifest). Two ways to call it:
       - godot_project='/path/to/my/godot/project' -> writes <project>/<subfolder>/ with res://<subfolder>/ paths (project.godot untouched);
@@ -592,6 +592,8 @@ def export_to_godot(path: str | None = None, chunk_cells: int | None = None, res
     godot_project/addons/terrain_3d, or terrain3d_addon=<addon folder>; standalone exports bundle the addon). To use the game's own Terrain3D look pass
     terrain3d_material / terrain3d_assets (res:// paths in the project) and terrain3d_texture_ids ({"grass": 0, "rock": 1, ...}: our 8 materials ->
     its texture slots). terrain3d_collision: 'full' | 'dynamic'.
+    Water is also written as data (WorldData/water.json + surface.r32: river ribbons with simulated waterfalls, lake cells, a surface grid
+    for wading/swimming); water_script='res://…/water.gd' puts the game's own water node in World.tscn instead of our water meshes.
     Refuses to overwrite a non-empty folder that is not a previous export. verify=True imports it in the real Godot (headless) and checks it."""
     from pathlib import Path as _P
     from exporters.godot.exporter import ExportSettings, export_world, verify_with_godot
@@ -612,7 +614,7 @@ def export_to_godot(path: str | None = None, chunk_cells: int | None = None, res
         r = export_world(SESSION, out_path, ExportSettings(chunk_cells=chunk_cells, res_prefix=res_prefix, write_project_file=write_project, profile=profile, include_preview=include_preview, navigation=navigation, grass=grass, grass_spacing=grass_spacing,
                                                      terrain=terrain, terrain3d_addon=terrain3d_addon, terrain3d_material=terrain3d_material,
                                                      terrain3d_assets=terrain3d_assets, terrain3d_texture_ids=terrain3d_texture_ids,
-                                                     terrain3d_collision=terrain3d_collision))
+                                                     terrain3d_collision=terrain3d_collision, water_script=water_script))
         if verify:
             r["godot_verification"] = verify_with_godot(out_path)          # embedded packages are verified in a temp copy: the host project is never opened
         r["next_step"] = ("In the Godot editor: let it import (or run a filesystem scan), then instance " + res_prefix + "World.tscn in your scene (or open " + res_prefix + "Preview.tscn for a quick look).")

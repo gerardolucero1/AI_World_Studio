@@ -162,3 +162,18 @@ el orden de las transformaciones de MultiMesh no se pudo comprobar en modo headl
   Probado en `wicktale` (el juego del usuario en Windows): senderos → id 1 (`terrain3d_texture_ids`), verificación y capturas sin abrir el proyecto.
 - Límites: las texturas son procedurales y planas de estilo (no el toon de tu juego salvo que pases tu material/assets); el sendero tallado no se marca
   como textura propia (sale como `dirt`); probado solo con Terrain3D 1.1.0 + Godot 4.7.2 en Windows.
+
+
+## Agua del juego (fase 10)
+- `exporters/godot/game_water.py`: `water.json` + `surface.r32` con el formato del `scripts/world/water.gd` de Wicktale (ver su cabecera) y
+  `ExportSettings(water_script=…)`: nodo del juego en `Features/Water` en lugar de nuestras mallas (lagos, cintas de río, láminas de cascada).
+- Cascadas: port de `simulate_falls` (columnas cada 0,5 m que cabalgan la superficie, pasan el borde donde la roca cae, caen con gravedad, resbalan por la
+  roca con arrastre y espuma, y entran 0,5 m en la poza; filas = instantes de 0,06 s). Ajustes para nuestro terreno: borde a 2 m bajo el agua (cauces
+  poco profundos), ancho = el del río aguas arriba (mínimo el `width` del río), y fin en escalones planos casi a nivel de la poza (terrazas).
+- Orillas: tope ancho/2 + 4 m y corte en precipicios (sin láminas colgando sobre la terraza de abajo). Rejilla: las celdas de río con el suelo a más de
+  4,5 m bajo el agua no cuentan (si no, `surface_at` hace nadar en el aire junto a un borde de terraza).
+- Verificación: el nodo de agua del grupo `"water"` responde `surface_at` en una celda del lago = su nivel (`water_node` en el informe).
+- Probado en Wicktale (`generated_worlds/test_highland_lake_s7_lago.tscn`): la heroína entra al lago y nada (y = nivel − 1,4 m, rueda de estamina);
+  capturas de las cascadas con su entorno.
+- Límites: nuestros ríos no se unen; la cinta del río no tiene colisión (como en el juego); vegetación sobre el agua en algún punto (la dispersión no
+  conoce la cinta de agua del juego).

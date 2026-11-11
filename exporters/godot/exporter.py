@@ -74,6 +74,8 @@ class ExportSettings:
     terrain3d_assets: str | None = None            # res:// path of the host game's Terrain3DAssets (texture list); None = Terrain3D/assets.tres
     terrain3d_collision: str = "full"              # "full" (whole terrain, works for NPCs anywhere) | "dynamic" (around the camera; cheaper on big maps)
     terrain3d_collision_layer: int = 1
+    water_script: str | None = None                # res:// script of the game's own water node (e.g. Wicktale's scripts/world/water.gd): it gets
+                                                   # WorldData/water.json + surface.r32 (always written) and replaces our water/waterfall meshes
 
 
 SHADER_DIR = Path(__file__).parent / "shaders"
@@ -361,20 +363,30 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
                         props.append(f"visibility_range_end = {ranges[k]:.1f}")
                     T.node(f"Terrain_LOD{k}", None, f"Terrain/{name}", props, index=k, groups=["aws_nav_src"] if k == 0 else None)
 
-        # ---- features & geometry
+        # ---- water as data (for the game's own water system) + features & geometry
+        from exporters.godot.game_water import write_water
+        water_info = write_water(out, hf, log); files += [water_info["file"], water_info["surface"]]
+        own_water = not s.water_script
         T.node("Features", "Node3D", "."); T.node("Geometry", "Node3D", ".")
         counts = {"lakes": 0, "rivers": 0, "cliffs": 0}
+        if not own_water:
+            T.ext.append(f'[ext_resource type="Script" path="{s.water_script}" id="water_gd"]')
+            sw_, sh_ = water_info["surface_size"]
+            T.node("Water", "Node3D", "Features", ['script = ExtResource("water_gd")', f'water_file = "{P}WorldData/water.json"',
+                                                  f'surface_file = "{P}WorldData/surface.r32"', "origin = Vector2(0, 0)",
+                                                  f"surf_cell = {water_info['surface_cell_m']}", f"surf_size = Vector2i({sw_}, {sh_})"])
+            counts.update(lakes=water_info["lakes"], rivers=water_info["rivers"], waterfalls=water_info["falls"])
         for op in log:
             r = op.result
             if not (op.enabled and r):
                 continue
-            if op.kind == "lake":
+            if op.kind == "lake" and own_water:
                 pos, nrm, idx = _lake_mesh(r); nm = f"Lake_{counts['lakes']}"; rel = f"Features/Lakes/{nm}.glb"
                 write_glb(out / rel, [dict(name="Water", positions=pos, normals=nrm, uvs=None, indices=idx, material="Water")]); files.append(rel)
                 T.node(nm, None, "Features", instance=T.ext_res(f"lake{counts['lakes']}", "PackedScene", rel))
                 T.node("Water", None, f"Features/{nm}", ['material_override = ExtResource("mat_water")'], index=0)
                 counts["lakes"] += 1
-            elif op.kind == "river":
+            elif op.kind == "river" and own_water:
                 nm = f"River_{counts['rivers']}"; rel = f"Features/Rivers/{nm}.glb"
                 T.node(nm, "Node3D", "Features")
                 m = _river_mesh(r)
@@ -613,6 +625,9 @@ def export_world(session: WorldSession, out_dir: str | Path, settings: ExportSet
                         "To use your game's look, point the Terrain3D node's material/assets to yours (or export with terrain3d_material/assets "
                         "and terrain3d_texture_ids)."}),
             "textures": tex, "materials": {"surface_order": MATERIALS, "splat0": "grass,dirt,rock (RGB)", "splat1": "snow,sand,mud (RGB)", "splat2": "wet_rock,gravel (RG)"},
+            "water": {**water_info, "drawn_by": s.water_script or "package meshes (Features/*)",
+                      "note": "water.json + surface.r32 follow the format of a game water system (rivers as sample ribbons with simulated "
+                              "waterfall columns, lakes as cells, surface grid for wading/swimming); see exporters/godot/game_water.py"},
             "features": counts, "grass": grass_info or "disabled", "vegetation": {"species": veg_summary, "total_instances": total_inst,
                                                "representation": "MultiMeshInstance3D per species per chunk (placeholder meshes)"},
             "stats": stats, "res_prefix": P, "profile": s.profile, "markers": marker_info, "navigation": "disabled",
@@ -783,6 +798,11 @@ func _initialize():
 	for t in root.find_children("*", "Terrain3D", true, false):
 		res["terrain3d"] = {"regions": t.data.get_region_count(), "region_size": t.get_region_size(), "vertex_spacing": t.vertex_spacing,
 			"collision_mode": t.collision_mode, "texture_arrays_ready": t.assets != null and t.assets.get_albedo_array_rid().is_valid()}   # at runtime Terrain3D frees the list after building the arrays
+	var wp = OS.get_environment("AWS_WATER_PROBE")
+	for w in get_nodes_in_group("water"):            # a game water node (e.g. water.gd): does it answer for the lake?
+		if wp != "" and w.has_method("surface_at"):
+			var q3 = wp.split(",")
+			res["water_node"] = {"surface_at_lake": w.surface_at(float(q3[0]), float(q3[1])), "expected": float(q3[2]), "children": w.get_child_count()}
 	var ps = root.find_child("PlayerStart", true, false)
 	if ps != null:                                  # is there solid ground (collision) under the spawn point?
 		var q = PhysicsRayQueryParameters3D.create(ps.global_position + Vector3(0, 30, 0), ps.global_position - Vector3(0, 60, 0))
@@ -964,9 +984,17 @@ def verify_with_godot(out_dir: str | Path, godot: str | None = None, timeout: in
     script.write_text(VERIFY_GD)
     try:
         mf = json.loads((out / "WorldData/manifest.json").read_text()); summit = mf.get("markers", {}).get("summit")
+        water_probe = ""
+        try:
+            lk = json.loads((out / "WorldData/water.json").read_text())["lakes"][0]
+            i, j = lk["cells"][len(lk["cells"]) // 2]
+            water_probe = f"{lk['x0'] + (i + 0.5) * lk['cell']:.2f},{lk['z0'] + (j + 0.5) * lk['cell']:.2f},{lk['level']}"
+        except (OSError, KeyError, IndexError, ValueError):
+            pass
         run = subprocess.run([godot, "--headless", "--path", str(proj), "--script", f"{prefix}WorldData/_verify.gd"], capture_output=True, text=True,
                              timeout=timeout, env={**os.environ, "AWS_SCENE": f"{prefix}World.tscn",
-                                                   "AWS_NAV_TARGET": ",".join(f"{v:.2f}" for v in summit) if summit else ""})
+                                                   "AWS_NAV_TARGET": ",".join(f"{v:.2f}" for v in summit) if summit else "",
+                                                   "AWS_WATER_PROBE": water_probe})
     finally:
         script.unlink(missing_ok=True)
     line = next((l for l in run.stdout.splitlines() if l.startswith("VERIFY_JSON ")), None)
@@ -984,6 +1012,9 @@ def verify_with_godot(out_dir: str | Path, godot: str | None = None, timeout: in
         res["ok"] = res["ok"] and t3.get("regions", 0) > 0 and bool(t3.get("texture_arrays_ready"))
     if "ground_under_start" in res:
         res["ok"] = res["ok"] and res["ground_under_start"]
+    if "water_node" in res:                           # the game's water must report the lake at its level
+        wn = res["water_node"]
+        res["ok"] = res["ok"] and abs(wn["surface_at_lake"] - wn["expected"]) < 0.05 and wn["children"] > 0
     if "nav_path_points" in res:                      # can a walker get from PlayerStart to (the walkable point nearest) the summit?
         res["nav_reaches_summit"] = bool(res["nav_path_points"] > 1 and 0 <= res["nav_end_gap_m"] < 6.0 and res["nav_goal_gap_m"] < 15.0)
     return res

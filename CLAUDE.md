@@ -10,8 +10,8 @@ capa 2, Forward+, Jolt; ahí instalamos mundos de prueba en `generated_worlds/` 
 Su terreno: `tallow_hills.tscn`, `Terrain3DMaterial` incrustado con `shader_override` = `res://shaders/terrain3d_toon.gdshader` (sin texturas; pinta pasto,
 roca por pendiente y camino donde la textura base es la id 1). Receta para instalar un mundo con su aspecto:
 `export_to_godot(godot_project=<wicktale>, subfolder="generated_worlds/<nombre>", terrain="terrain3d", terrain3d_material="res://tallow_hills.tscn",
-terrain3d_texture_ids={"dirt": 1, resto: 0})`. Instalados: `generated_worlds/highland_lake_t3d` (1024 m, semilla 3) y `highland_lake_s7` (1536 m, semilla 7) con la escena de prueba
-`generated_worlds/test_highland_lake_s7.tscn` (World + su sol + `world_env_open.tres` + Player armado como en `world_test.tscn`, en PlayerStart;
+terrain3d_texture_ids={"dirt": 1, resto: 0}, water_script="res://scripts/world/water.gd")` (agua del juego: nada, vadea, sus cascadas toon). Instalados: `generated_worlds/highland_lake_t3d` (1024 m, semilla 3) y `highland_lake_s7` (1536 m, semilla 7) con la escena de prueba
+`generated_worlds/test_highland_lake_s7.tscn` y `test_highland_lake_s7_lago.tscn` (en la orilla del lago) (World + su sol + `world_env_open.tres` + Player armado como en `world_test.tscn`, en PlayerStart;
 `start_yaw` = atan2(dx, dz): el modelo mira a +Z). Probado jugando por MCP `godot-ai` (acciones `move_forward`, `run`, `jump`).
 Se trabaja en Windows: Godot 4.7.2 en `~/Downloads/Godot_v4.7.2-stable_win64.exe/…_console.exe` (lo encuentra `godot_bin.find_godot`).
 
@@ -21,7 +21,7 @@ Se trabaja en Windows: Godot 4.7.2 en `~/Downloads/Godot_v4.7.2-stable_win64.exe
 - Rápido: `python awstudio.py generate highland_lake --size 1024 --seed 3 --save X.awp --godot-project <proyecto> --subfolder generated_worlds/nombre`.
 - UI: `python awstudio.py ui` (Archivo → Generar paisaje de ejemplo Ctrl+G; Exportar a Godot Ctrl+E). REST: `awstudio.py api`.
 - Tests: `pytest -q` (≈3 min; incluye importaciones, navegación y Terrain3D en Godot real si `find_godot` lo encuentra / `$AWS_GODOT`, y el addon
-  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 86 en verde. Venv: `.venv/Scripts/python.exe`.
+  Terrain3D en `$AWS_TERRAIN3D_ADDON` o en un proyecto de `~/Desktop/Proyectos/Godot/*`). Estado: 88 en verde. Venv: `.venv/Scripts/python.exe`.
 
 ## Mapa del código
 `core/world/session.py` (WorldSession: operaciones, undo, checkpoints) y `service.py` (las 52 herramientas, única fuente para UI/CLI/REST/MCP) ·
@@ -53,6 +53,11 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
   `terrain3d_material` acepta una escena `.tscn`: se copia su `Terrain3DMaterial` (rutas externas intactas, `world_background = 0`); las copias temporales
   (`_temp_project`) traen esas dependencias del proyecto receptor (`copy_external_deps`). Las capturas de paquetes incrustados también van en copia temporal.
   Para ver el aspecto real del juego, capturar con su entorno (`world_env_open.tres`) y su sol, no con `Preview.tscn` (lava los colores toon).
+- Agua como datos (`exporters/godot/game_water.py`, siempre en `WorldData/water.json` + `surface.r32`, formato del `water.gd` del juego): cinta de
+  muestras `[x,y,z,izq,der,caída]` cada 3 m, cascadas simuladas (port de `gen_tallow_hills.simulate_falls`), lagos en celdas de 4 m, rejilla de superficie.
+  Nuestros cauces son poco profundos y van por terrazas: la orilla se mide con tope (ancho/2 + 4 m) y se corta en los precipicios (si no, láminas colgando);
+  las cascadas toman el ancho de aguas arriba (en el borde la medición sale corta); el agua que cae en un escalón plano casi a nivel de la poza termina ahí;
+  las celdas de río con suelo > 4,5 m bajo el agua no son agua (borde de terraza junto al río: nadaría en el aire).
 - **Godot headless NO compila shaders ni dibuja**: para ver el resultado usa `screenshot_with_godot` (ventana real) o el editor vía MCP. Verifica siempre con capturas.
 - No guardar pesos en el canal alfa de PNG (Godot "arregla" el RGB de píxeles transparentes → rampas negras): splat maps en RGB opaco (3 texturas).
 - Texturas usadas en 3D pueden recomprimirse con pérdida: datos exactos (alturas) van en `.tres` ImageTexture (RG8 en base64), no en PNG.
@@ -67,7 +72,8 @@ erosión, chunks) · `features/` (curvas, `rivers/river.py` con cascadas, lagos,
 
 ## Pendiente (orden sugerido; detalle en el plan §28)
 1. ~~Exportar a Terrain3D~~ (hecho y probado en `wicktale` con su material toon; falta que el usuario lo recorra con su jugador).
-2. Flores y más hierba (interacción, estilo del juego).
+2. ~~Agua del juego~~ (hecho: `water_script`). Siguiente: usar `flora.gd` y `grass_field.gd` del juego (vegetación con colisión, pasto y flores);
+   senderos con su propia id de textura (hoy `dirt` = id 1). Flores y más hierba.
 3. Formaciones de roca (arcos, pilares, salientes); acantilados como geometría real en las terrazas. 4. Más presets (cañón, costa, pradera abierta).
 5. Editar features creados (`modify_*`), dependencias y aviso de "desactualizado"; reordenar/desactivar operaciones. 6. UI: editor de curvas/senderos, overlays, panel de actividad del agente.
 7. Cascadas con colisión/sonido/salpicaduras; ríos que se unen. 8. Validador completo, AWP completo, procedencia de assets, probar otras versiones de Godot (solo 4.7.2 probado).

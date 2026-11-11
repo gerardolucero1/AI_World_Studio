@@ -912,7 +912,8 @@ límite de 4096 polígonos de `map_get_path`; colisión a la misma resolución q
 ### 28.6 Próximos pasos (orden recomendado)
 1. ~~Exportar a Terrain3D~~ **Hecho** (10/11/2026, `terrain="terrain3d"`, ver `docs/sprint1.md` fase 9). Probado en el juego del usuario (`wicktale`,
    antes `prubas-3d`) con su material toon sacado de `tallow_hills.tscn`. Pendiente: recorrerlo con su jugador y marcar senderos con textura propia.
-2. Flores y hierba más rica (interacción con el jugador, estilo del juego), cascadas con colisión/sonido/salpicaduras.
+2. ~~Agua del juego~~ **Hecho** (`water_script`: agua como datos para el `water.gd` del juego; nadar/vadear y cascadas toon verificados en Wicktale).
+   Siguiente: vegetación y pasto con los sistemas del juego (`flora.gd`, `grass_field.gd`), flores, senderos con textura propia.
 3. Formaciones de roca singulares (arcos, pilares, salientes) y acantilados de terraza como geometría real.
 4. Más presets (cañón, costa, pradera abierta, valle fluvial) y variantes del `highland_lake`.
 5. Edición posterior de features (`modify_*`), grafo de dependencias con aviso de "desactualizado", reordenar/desactivar operaciones.
