@@ -862,63 +862,68 @@ suaviza, recorre con cámara libre y guarda el proyecto. Esta base
 permitirá incorporar generación procedural, ríos, lagos, acantilados,
 biomas y MCP.
 
-## 28. Estado de implementación (10 de noviembre de 2026) y próximos pasos
+## 28. Estado de implementación (11 de noviembre de 2026) y próximos pasos
 
-### 28.1 Cambio de enfoque
+### 28.1 Enfoque
 El producto es el **generador**; Godot es solo un destino. Cada mundo sale como **paquete autocontenido** que se instala en cualquier proyecto de Godot 4
-(`World.tscn` solo con el mundo, `Preview.tscn` opcional, rutas `res://` reubicables, perfil `compatible` para el renderer Compatibility, marcadores y
-`Path3D` para el juego, navegación horneada). Se verifica siempre con Godot real (importación, navegación, capturas), no solo con pruebas de archivos.
-Objetivo de referencia visual: Genshin Impact / Zelda BOTW. Proyecto de pruebas del usuario: `prubas-3d` (Terrain3D, jugador con escalada y planeo).
+(`World.tscn` solo con el mundo, `Preview.tscn` opcional, rutas `res://` reubicables, perfil `compatible`, marcadores y `Path3D`, navegación horneada),
+con terreno propio (chunks GLB) o **Terrain3D**, y agua propia o la del **sistema de agua del juego**. Se verifica siempre con Godot real (importación,
+navegación, capturas, jugar con el personaje vía MCP `godot-ai`). Referencia visual: Genshin Impact / Zelda BOTW. Juego del usuario: Bowgame/*Wicktale*
+(`~/Desktop/Proyectos/Godot/wicktale` en Windows; antes `prubas-3d` en macOS). Desde 11/2026 se trabaja en Windows (rama `terrain3d-windows`).
 
 ### 28.2 Estado por sección
 | § | Área | Estado |
 |---|---|---|
-| 2–3 | Todo en Python; UI/MCP sobre los mismos servicios | **Hecho** (`WorldSession` + `service.py`; UI, CLI, REST y MCP) |
-| 4.1 | Terrain Layer | **Hecho** (heightfield float32, chunks de 64 celdas, LOD) |
-| 4.2 | Feature Layer | **Parcial**: ríos con cascadas y poza, lagos, senderos auto-enrutados, montaña escalable. Faltan `modify_*`, dependencias, ríos que se unen |
-| 4.3 / 8 | Geometry / acantilados | **Parcial**: muralla de mesetas (malla real) y terrazas con paredes (terreno + shader facetado). Faltan arcos, pilares, cuevas, bloques |
-| 4.4 / 9 | Biomas y vegetación | **Parcial**: dispersión por reglas (altitud, pendiente, agua, acantilados, claros), robles/pinos/arbustos/rocas procedurales, hierba alta por GPU. Faltan biomas con nombre, flores, pincel de densidad, modelos GLB |
-| 4.5 / 10 | Materiales | **Parcial**: 8 materiales por reglas + pintura; colores, sin texturas |
-| 5 | Esculpido | **Parcial**: Subir/Bajar/Suavizar/Aplanar/Pintar. Faltan Stamp, Noise, Terrace (pincel), Pinch, Erode, máscaras, simetría |
-| 6 | Procedural | **Hecho en lo básico**: ruido, montañas, valles, cuencos, terrazas, anillo de montañas, erosión térmica/hidráulica. Faltan reordenar/desactivar operaciones |
-| 7 | Feature Engine | **Parcial** (ver 4.2). Cascadas: lámina + shader + poza, sin colisión/sonido/partículas |
-| 11 | Viewport / inspección | **Parcial**: cámara de órbita, vistas headless aérea/jugador. Faltan overlays, panorámicas, recorridos |
-| 12 | Validador | **Parcial**: terreno, features, vegetación, exportación, transitabilidad |
-| 13 | AWP | **Parcial**: `project.json` + heightfield + `ops.json` + estilo; falta separación de capas y versiones en disco |
-| 14 | API / MCP | **Hecho en su mayor parte**: 52 herramientas (MCP/REST/CLI), tareas asíncronas, checkpoints |
-| 15 | Flujo autónomo | **Parcial**: sin modos Assisted/Autonomous/Batch ni autocorrección automática |
-| 16 | Exportador Godot | **Hecho en lo esencial**: chunks GLB + LOD + colisión **o Terrain3D** (regiones horneadas con el addon real, 8 texturas, mapa de control, colisión, navegación), agua/cascadas, vegetación MultiMesh, hierba GPU, shaders estilizados, navegación Recast, marcadores, manifiesto, validación, reubicación. Faltan streaming, partículas |
-| 17 | Interfaz | **Parcial**: en español, herramientas por modo, historial, generador, diálogo de exportación (Terrain3D, material y agua del juego), colocar objetos, editor de curvas (ríos, senderos, lagos) con repetición del historial. Faltan biblioteca de assets, overlays, panel de agente |
-| 21 | Pruebas | **Hecho en lo esencial**: 78 pruebas (con Godot real). Faltan rendimiento y otras versiones de Godot |
-| 23 | Procedencia de assets | **No hecho** (todo es procedural y propio por ahora) |
+| 2–3 | Todo en Python; UI/MCP sobre los mismos servicios | **Hecho**: `WorldSession` + `service.py` (56 herramientas); el editor comparte la sesión y la sirve a agentes (puente MCP) |
+| 4.1 | Terrain Layer | **Hecho** (heightfield float32, chunks de 64 celdas, LOD; terreno original guardado para repetir el historial) |
+| 4.2 | Feature Layer | **Parcial**: ríos con cascadas y poza, lagos, senderos auto-enrutados, montaña escalable, objetos sueltos; **edición posterior** de cualquier operación (`modify_operation`, activar/desactivar). Faltan ríos que se unen y aviso de «desactualizado» |
+| 4.3 / 8 | Geometry / acantilados | **Parcial**: muralla de mesetas (malla), terrazas y mesetas con paredes del terreno. Faltan roca esculpida en paredes, arcos, pilares, cuevas |
+| 4.4 / 9 | Biomas y vegetación | **Parcial**: dispersión por reglas, objetos colocados a mano, hierba por GPU; se reasientan tras cambios de terreno. Faltan biomas con nombre, flores, pincel de densidad, assets del juego |
+| 4.5 / 10 | Materiales | **Parcial**: 8 materiales por reglas + pintura; en Terrain3D, 8 texturas procedurales o el material del juego |
+| 5 | Esculpido | **Parcial**: Subir/Bajar/Suavizar/Aplanar/Pintar (registrados como operaciones repetibles). Faltan sello, ruido, terraza, máscaras, simetría |
+| 6 | Procedural | **Hecho en lo básico**: ruido, montañas, cordilleras, valles, cuencos, mesetas, terrazas, anillo de montañas, erosión. Presets: `highland_lake`, `mesa_valley`, `river_valley`, `canyon` |
+| 7 | Feature Engine | **Parcial** (ver 4.2). Cascadas simuladas columna a columna para el agua del juego |
+| 11 | Viewport / inspección | **Hecho en lo esencial**: órbita, vista cenital, capas de análisis (altura, pendiente, agua, transitable), vistas headless para agentes |
+| 12 | Validador | **Parcial**: terreno, features, vegetación, exportación, transitabilidad, verificación en Godot (regiones, colisión bajo el inicio, navegación, agua del juego) |
+| 13 | AWP | **Parcial**: `project.json` + heightfield + `origin.npy` + `ops.json` + estilo; falta separación por capas y versiones |
+| 14 | API / MCP | **Hecho**: 56 herramientas (MCP/REST/CLI), tareas asíncronas, checkpoints, `inspect_godot_project`; con el editor abierto el MCP trabaja sobre su mundo |
+| 15 | Flujo autónomo | **Parcial**: el agente construye, mira, valida y corrige; panel «Agente» en vivo. Falta modo asistido (proponer/aprobar) |
+| 16 | Exportador Godot | **Hecho en lo esencial**: chunks GLB + LOD + colisión o **Terrain3D** (regiones horneadas con el addon real, material del juego), agua propia o **datos para el agua del juego** (`water.json` + `surface.r32`), vegetación MultiMesh, hierba GPU, navegación Recast, marcadores, manifiesto, validación, reubicación. Faltan streaming, partículas |
+| 17 | Interfaz | **Hecho en lo esencial**: diálogo de generación (4 tipos), diálogo de exportación (detecta Terrain3D/material/agua del juego), colocar objetos, editor de curvas, Historial editable, capas de análisis, panel Agente. Faltan biblioteca de assets, pinceles nuevos, modo asistido |
+| 21 | Pruebas | **Hecho en lo esencial**: 117 pruebas (Godot real, Terrain3D, editor sin pantalla, puente MCP). Faltan rendimiento y otras versiones de Godot |
+| 23 | Procedencia de assets | **No hecho** (todo es procedural y propio) |
 
 ### 28.3 Decisiones resueltas (§25)
 1. Viewport: `QOpenGLWidget` + PyOpenGL (core 3.3). 2. Chunks de 64 celdas, bordes compartidos. 3. Heightfield float32 + splat maps RGB (8 materiales en 3 texturas).
-4. Erosión: térmica (conserva masa) e hidráulica aproximada, vectorizadas. 5. Acantilados: mixto (terrazas en el heightfield + muralla de malla para mesetas).
-6. Curvas: Catmull-Rom remuestreadas por longitud de arco. 7. Vegetación: MultiMesh por especie y chunk (mallas procedurales horneadas) + hierba por GPU.
-8. Godot objetivo: **4.7.2** (única versión probada). 9. LOD: 4 niveles con faldones, distancias fijas, sin streaming. 10. Librerías: numpy, scipy, Pillow, PySide6, PyOpenGL, FastAPI, mcp 2.x.
+4. Erosión: térmica e hidráulica aproximada, vectorizadas. 5. Acantilados: mixto (terrazas/mesetas en el heightfield + muralla de malla).
+6. Curvas: Catmull-Rom por longitud de arco; edición con asas y caída suave a lo largo de la curva. 7. Vegetación: MultiMesh por especie y chunk + hierba por GPU.
+8. Godot objetivo: **4.7.2** (única versión probada); Terrain3D **1.1.0**. 9. LOD: 4 niveles con faldones, sin streaming.
+10. Edición no destructiva: se guarda el terreno original y se repite el historial (determinista) al cambiar una operación pasada.
+11. Integración con el juego: no se escribe su formato de regiones desde Python (lo hace Godot con su addon en una copia temporal); su agua recibe datos.
+12. Librerías: numpy, scipy, Pillow, PySide6, PyOpenGL, FastAPI, mcp 2.x.
 
-### 28.4 Lo construido en esta fase (resumen)
-Terrazas (`terrace`), cuenco (`bowl`), anillo de montañas redondeado, estilo de mundo (`set_world_style`); enrutamiento de senderos y transitabilidad;
-`create_river_auto` con detección de caídas, pozas y láminas de cascada; `create_climbable_mountain` (espiral de pendiente constante + cima plana con `cap`);
-preset `highland_lake`; shaders (terreno, follaje, roca, agua con profundidad, cascada, hierba, cielo); biblioteca procedural; exportador portable
-(`relocate_package`, perfiles, marcadores, `Path3D`, navegación Recast verificada de aparición a cima, colisión a resolución completa); CLI `awstudio.py`; `.mcp.json`.
-Detalle y límites por fase: `docs/sprint1.md`.
+### 28.4 Lo construido (resumen por fases; detalle y límites en `docs/sprint1.md`)
+- Fases 1–8 (macOS): terreno, procedural, ríos con cascadas, lagos, senderos, montaña escalable, `highland_lake`, exportador portable, navegación, hierba.
+- Fase 9: paso a Windows; exportación a **Terrain3D** con el material del juego; verificación y capturas sin abrir el proyecto receptor.
+- Fase 10: **agua como datos** para el `water.gd` del juego (nadar/vadear, cascadas toon); probado jugando con el personaje.
+- Fase 11: editor — diálogo de exportación, objetos sueltos, edición de curvas y de cualquier operación (repetición del historial), capas de análisis,
+  panel Historial, puente editor↔MCP con panel Agente; `water_mask` 60× más rápido.
+- Fase 12: presets `mesa_valley`, `river_valley`, `canyon` y selector en el editor; `highland_lake` robusto (20/20 semillas).
 
 ### 28.5 Hallazgos técnicos que costó descubrir
-Ver `CLAUDE.md` («Lecciones técnicas»): Godot headless no dibuja ni compila shaders; no usar alfa para pesos; datos exactos en `.tres` y no en PNG; colores de vértice sRGB;
-límite de 4096 polígonos de `map_get_path`; colisión a la misma resolución que la malla; no abrir el proyecto receptor con Godot (copia temporal); rampas ≥ 6 m; `custom_aabb` en MultiMesh con shader.
+Ver `CLAUDE.md` («Lecciones técnicas»): Godot headless no dibuja; Terrain3D (regiones vía addon, `change_region_size` en el árbol, `texture_list` vacía en
+juego, fondo infinito del material); agua en terrazas (orillas, cascadas, celdas en el aire); no alfa para pesos; datos exactos en `.tres`; colisión a la
+resolución de la malla; copia temporal para todo lo que ejecute Godot; entorno mínimo de los clientes MCP; el editor debe compartir la sesión.
 
 ### 28.6 Próximos pasos (orden recomendado)
-1. ~~Exportar a Terrain3D~~ **Hecho** (10/11/2026, `terrain="terrain3d"`, ver `docs/sprint1.md` fase 9). Probado en el juego del usuario (`wicktale`,
-   antes `prubas-3d`) con su material toon sacado de `tallow_hills.tscn`. Pendiente: recorrerlo con su jugador y marcar senderos con textura propia.
-2. ~~Agua del juego~~ **Hecho** (`water_script`: agua como datos para el `water.gd` del juego; nadar/vadear y cascadas toon verificados en Wicktale).
-   Siguiente: vegetación y pasto con los sistemas del juego (`flora.gd`, `grass_field.gd`), flores, senderos con textura propia.
-3. Formaciones de roca singulares (arcos, pilares, salientes) y acantilados de terraza como geometría real.
-4. Más presets (cañón, costa, pradera abierta, valle fluvial) y variantes del `highland_lake`.
-5. Edición posterior de features (`modify_*`), grafo de dependencias con aviso de "desactualizado", reordenar/desactivar operaciones.
-6. UI: editor de curvas y senderos, overlays (altura/pendiente/biomas), panel de actividad del agente, modos Assisted/Autonomous.
-7. Calidad: validador completo, AWP por capas con versiones, rendimiento en mapas grandes, probar otras versiones de Godot, procedencia de assets.
+1. **Acabado visual** (lo que más separa de Genshin; probado con la escena de referencia en `generated_worlds/test_genshin_ref.tscn`):
+   a) revestir paredes de mesetas/terrazas y laderas de montaña con piezas de roca 3D (catálogo `rock_cliff` del juego o piezas procedurales) a lo largo
+   de los contornos; b) montañas con crestas y erosión en vez de ruido; c) vegetación y pasto con los sistemas del juego (`flora.gd`, `grass_field.gd`, flores).
+2. Senderos con id de textura propia; ríos que se unen; cascadas con colisión/sonido.
+3. Más presets (costa, alta montaña/glaciar, islas) y formaciones de roca (arcos, pilares, salientes, cuevas).
+4. Editor: pinceles nuevos (sello, ruido, terraza, máscaras), biblioteca de assets, modo asistido, dependencias con aviso de «desactualizado».
+5. Calidad: validador completo, AWP por capas con versiones, rendimiento en mapas grandes, otras versiones de Godot, procedencia de assets.
+6. Integración: fusionar `terrain3d-windows` en `main`; que el usuario recorra los mundos generados con su personaje y ajustar escala/pendientes a su controlador.
 
 ------------------------------------------------------------------------
 
